@@ -2,9 +2,7 @@
 
 ScriptEngine* ScriptEngine::instance_ = nullptr;
 
-ScriptEngine::ScriptEngine() {
-    instance_ = this;
-}
+ScriptEngine::ScriptEngine() { instance_ = this; }
 
 ScriptEngine::~ScriptEngine() {
     if (L_) {
@@ -15,16 +13,123 @@ ScriptEngine::~ScriptEngine() {
 }
 
 bool ScriptEngine::begin() {
-    if (L_) lua_close(L_);
-    L_ = luaL_newstate();
-    if (!L_) return false;
-    luaL_openlibs(L_);
-    registerApi();
+    if (!outputMutex_) outputMutex_ = xSemaphoreCreateMutex();
+    if (!queue_) queue_ = xQueueCreate(2, sizeof(ScriptJob));
+    if (!outputMutex_ || !queue_) return false;
+
+    if (!taskHandle_) {
+        BaseType_t ok = xTaskCreate(taskEntry, "LuaTask", 8192, this, 4, &taskHandle_);
+        if (ok != pdPASS) return false;
+    }
     return true;
 }
 
+bool ScriptEngine::submit(const String& code) {
+    if (!queue_ || running_ || pending_ || code.length() == 0) return false;
+
+    char* copy = static_cast<char*>(pvPortMalloc(code.length() + 1));
+    if (!copy) return false;
+    memcpy(copy, code.c_str(), code.length());
+    copy[code.length()] = 0;
+
+    ScriptJob job{copy, code.length()};
+    pending_ = true;
+    clearOutput();
+    append("[RTOS] Lua script queued\n");
+
+    if (xQueueSend(queue_, &job, 0) != pdPASS) {
+        pending_ = false;
+        vPortFree(copy);
+        return false;
+    }
+    return true;
+}
+
+void ScriptEngine::taskEntry(void* arg) {
+    static_cast<ScriptEngine*>(arg)->taskLoop();
+}
+
+void ScriptEngine::taskLoop() {
+    for (;;) {
+        ScriptJob job{};
+        if (xQueueReceive(queue_, &job, portMAX_DELAY) == pdPASS) {
+            pending_ = false;
+            running_ = true;
+            stopRequested_ = false;
+            append("[RTOS] LuaTask started\n");
+            execute(job.code, job.length);
+            vPortFree(job.code);
+            running_ = false;
+            append(stopRequested_ ? "[RTOS] LuaTask stopped\n" : "[RTOS] LuaTask finished\n");
+        }
+    }
+}
+
+bool ScriptEngine::execute(const char* code, size_t length) {
+    if (L_) lua_close(L_);
+    L_ = luaL_newstate();
+    if (!L_) {
+        append("Lua init error\n");
+        return false;
+    }
+
+    luaL_openlibs(L_);
+    registerApi();
+    lua_sethook(L_, luaHook, LUA_MASKCOUNT, 2000);
+
+    const int loadResult = luaL_loadbuffer(L_, code, length, "web-script");
+    if (loadResult != LUA_OK) {
+        append("Lua compile error: ");
+        append(lua_tostring(L_, -1));
+        append("\n");
+        lua_pop(L_, 1);
+        return false;
+    }
+
+    const int runResult = lua_pcall(L_, 0, LUA_MULTRET, 0);
+    if (runResult != LUA_OK) {
+        const char* err = lua_tostring(L_, -1);
+        if (err) {
+            append(stopRequested_ ? "Lua stopped: " : "Lua runtime error: ");
+            append(err);
+            append("\n");
+        }
+        lua_pop(L_, 1);
+        return false;
+    }
+    return true;
+}
+
+void ScriptEngine::luaHook(lua_State* L, lua_Debug*) {
+    if (instance_ && instance_->stopRequested_) {
+        luaL_error(L, "STOP requested");
+    }
+    taskYIELD();
+}
+
+void ScriptEngine::stop() { stopRequested_ = true; }
+
+String ScriptEngine::output() {
+    if (!outputMutex_) return output_;
+    xSemaphoreTake(outputMutex_, portMAX_DELAY);
+    String copy = output_;
+    xSemaphoreGive(outputMutex_);
+    return copy;
+}
+
+void ScriptEngine::clearOutput() {
+    if (!outputMutex_) { output_ = ""; return; }
+    xSemaphoreTake(outputMutex_, portMAX_DELAY);
+    output_ = "";
+    xSemaphoreGive(outputMutex_);
+}
+
 void ScriptEngine::append(const String& text) {
-    if (activeOutput_) *activeOutput_ += text;
+    if (!outputMutex_) { output_ += text; return; }
+    xSemaphoreTake(outputMutex_, portMAX_DELAY);
+    output_ += text;
+    if (output_.length() > 24000) output_.remove(0, output_.length() - 24000);
+    xSemaphoreGive(outputMutex_);
 }
 
 int ScriptEngine::l_print(lua_State* L) {
@@ -59,7 +164,7 @@ int ScriptEngine::l_bus_write(lua_State* L) {
 
 int ScriptEngine::l_bus_read(lua_State* L) {
     const uint16_t addr = (uint16_t)luaL_checkinteger(L, 1);
-    const uint16_t value = 0xFFFF; // аппаратный BusController подключается следующим слоем
+    const uint16_t value = 0xFFFF;
     if (instance_) {
         char line[80];
         snprintf(line, sizeof(line), "[BUS] READ addr=0x%04X -> 0x%04X (stub)\n", addr, value);
@@ -69,15 +174,8 @@ int ScriptEngine::l_bus_read(lua_State* L) {
     return 1;
 }
 
-int ScriptEngine::l_bus_ready(lua_State* L) {
-    lua_pushboolean(L, 0); // будет заменено чтением READY
-    return 1;
-}
-
-int ScriptEngine::l_bus_irq(lua_State* L) {
-    lua_pushboolean(L, 0); // будет заменено чтением IRQ
-    return 1;
-}
+int ScriptEngine::l_bus_ready(lua_State* L) { lua_pushboolean(L, 0); return 1; }
+int ScriptEngine::l_bus_irq(lua_State* L) { lua_pushboolean(L, 0); return 1; }
 
 int ScriptEngine::l_bus_invert_data(lua_State* L) {
     const bool enabled = lua_toboolean(L, 1);
@@ -92,11 +190,8 @@ int ScriptEngine::l_bus_invert_addr(lua_State* L) {
 }
 
 void ScriptEngine::registerApi() {
-    lua_pushcfunction(L_, l_print);
-    lua_setglobal(L_, "print");
-
-    lua_pushcfunction(L_, l_delay_us);
-    lua_setglobal(L_, "delay_us");
+    lua_pushcfunction(L_, l_print); lua_setglobal(L_, "print");
+    lua_pushcfunction(L_, l_delay_us); lua_setglobal(L_, "delay_us");
 
     lua_newtable(L_);
     lua_pushcfunction(L_, l_bus_write);       lua_setfield(L_, -2, "write");
@@ -106,46 +201,4 @@ void ScriptEngine::registerApi() {
     lua_pushcfunction(L_, l_bus_invert_data); lua_setfield(L_, -2, "invert_data");
     lua_pushcfunction(L_, l_bus_invert_addr); lua_setfield(L_, -2, "invert_addr");
     lua_setglobal(L_, "bus");
-}
-
-bool ScriptEngine::run(const String& code, String& output) {
-    output = "";
-    if (!L_ && !begin()) {
-        output = "Lua init error\n";
-        return false;
-    }
-
-    running_ = true;
-    activeOutput_ = &output;
-
-    const int loadResult = luaL_loadbuffer(L_, code.c_str(), code.length(), "web-script");
-    if (loadResult != LUA_OK) {
-        output += "Lua compile error: ";
-        output += lua_tostring(L_, -1);
-        output += "\n";
-        lua_pop(L_, 1);
-        activeOutput_ = nullptr;
-        running_ = false;
-        return false;
-    }
-
-    const int runResult = lua_pcall(L_, 0, LUA_MULTRET, 0);
-    if (runResult != LUA_OK) {
-        output += "Lua runtime error: ";
-        output += lua_tostring(L_, -1);
-        output += "\n";
-        lua_pop(L_, 1);
-        activeOutput_ = nullptr;
-        running_ = false;
-        return false;
-    }
-
-    activeOutput_ = nullptr;
-    running_ = false;
-    return true;
-}
-
-void ScriptEngine::stop() {
-    // На следующем этапе сюда добавляется debug hook Lua для прерывания бесконечного цикла.
-    running_ = false;
 }
