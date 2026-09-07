@@ -1,21 +1,31 @@
 #include <Arduino.h>
+#include <STM32FreeRTOS.h>
 #include "ScriptEngine.h"
 #include "WebServerApp.h"
 
 ScriptEngine scripts;
 WebServerApp web(scripts);
 
+static TaskHandle_t webTaskHandle = nullptr;
+
+static void webTask(void*) {
+    for (;;) {
+        web.loop();
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+}
+
 void setup() {
     Serial.begin(115200);
     delay(300);
 
     Serial.println();
-    Serial.println("OSTester boot");
+    Serial.println("OSTester boot / FreeRTOS");
 
     if (!scripts.begin()) {
-        Serial.println("Lua init failed");
+        Serial.println("Lua FreeRTOS task init failed");
     } else {
-        Serial.println("Lua ready");
+        Serial.println("LuaTask ready");
     }
 
     web.begin();
@@ -24,8 +34,16 @@ void setup() {
     Serial.print("HTTP: http://");
     Serial.print(ip);
     Serial.println("/");
+
+    if (xTaskCreate(webTask, "WebTask", 4096, nullptr, 3, &webTaskHandle) != pdPASS) {
+        Serial.println("WebTask create failed");
+        while (true) delay(1000);
+    }
+
+    Serial.println("Starting FreeRTOS scheduler");
+    vTaskStartScheduler();
 }
 
 void loop() {
-    web.loop();
+    // Не используется: после vTaskStartScheduler() работают задачи FreeRTOS.
 }
