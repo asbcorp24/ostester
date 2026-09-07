@@ -10,11 +10,7 @@ public:
     bool begin();
     bool write(uint16_t address, uint16_t data, TickType_t timeout = pdMS_TO_TICKS(1000));
     bool read(uint16_t address, uint16_t& value, TickType_t timeout = pdMS_TO_TICKS(1000));
-
-    // Wait for peripheral READY. Edge wake-up is interrupt driven (EXTI8).
-    // Short sub-tick timeouts are checked against the DWT microsecond counter;
-    // longer waits sleep the BusTask using a direct-to-task notification.
-    bool waitReady(uint32_t timeoutUs);
+    bool waitReady(uint32_t timeoutUs, TickType_t queueTimeout = pdMS_TO_TICKS(1000));
 
     void setInvertAddress(bool enabled) { invertAddress_ = enabled; }
     void setInvertData(bool enabled) { invertData_ = enabled; }
@@ -37,13 +33,14 @@ public:
 private:
     BusEngine() = default;
 
-    enum class Type : uint8_t { Write, Read };
+    enum class Type : uint8_t { Write, Read, WaitReady };
 
     struct Command {
         Type type;
         uint16_t address;
         uint16_t data;
         uint16_t result;
+        uint32_t timeoutUs;
         TaskHandle_t requester;
         bool ok;
     };
@@ -66,6 +63,7 @@ private:
     static void taskEntry(void* arg);
     void taskLoop();
     void execute(Command& cmd);
+    bool waitReadyInBusTask(uint32_t timeoutUs);
 
     void initHardware();
     void initEventInputs();
