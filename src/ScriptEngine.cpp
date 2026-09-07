@@ -136,6 +136,44 @@ void ScriptEngine::append(const String& text) {
     xSemaphoreGive(outputMutex_);
 }
 
+uint32_t ScriptEngine::elapsedUs(uint32_t startedCycles) {
+    const uint32_t cycles = static_cast<uint32_t>(DWT->CYCCNT - startedCycles);
+    const uint32_t cyclesPerUs = SystemCoreClock / 1000000u;
+    return cyclesPerUs ? (cycles / cyclesPerUs) : 0;
+}
+
+void ScriptEngine::pushResultTable(lua_State* L,
+                                   bool ok,
+                                   uint16_t address,
+                                   uint16_t data,
+                                   bool ready,
+                                   bool irq,
+                                   uint32_t timeUs,
+                                   const char* error,
+                                   bool hasExpected,
+                                   uint16_t expected,
+                                   uint16_t mask,
+                                   bool matched) {
+    lua_newtable(L);
+
+    lua_pushboolean(L, ok); lua_setfield(L, -2, "ok");
+    lua_pushinteger(L, address); lua_setfield(L, -2, "address");
+    lua_pushinteger(L, data); lua_setfield(L, -2, "data");
+    lua_pushboolean(L, ready); lua_setfield(L, -2, "ready");
+    lua_pushboolean(L, irq); lua_setfield(L, -2, "irq");
+    lua_pushinteger(L, timeUs); lua_setfield(L, -2, "time_us");
+
+    if (error) lua_pushstring(L, error);
+    else lua_pushnil(L);
+    lua_setfield(L, -2, "error");
+
+    if (hasExpected) {
+        lua_pushinteger(L, expected); lua_setfield(L, -2, "expected");
+        lua_pushinteger(L, mask); lua_setfield(L, -2, "mask");
+        lua_pushboolean(L, matched); lua_setfield(L, -2, "matched");
+    }
+}
+
 int ScriptEngine::l_print(lua_State* L) {
     const int n = lua_gettop(L);
     for (int i = 1; i <= n; ++i) {
@@ -168,6 +206,26 @@ int ScriptEngine::l_bus_write(lua_State* L) {
     return 1;
 }
 
+int ScriptEngine::l_bus_write_ex(lua_State* L) {
+    const uint16_t addr = (uint16_t)luaL_checkinteger(L, 1);
+    const uint16_t data = (uint16_t)luaL_checkinteger(L, 2);
+    const uint32_t started = DWT->CYCCNT;
+    const bool ok = BusEngine::instance().write(addr, data);
+    const uint32_t timeUs = elapsedUs(started);
+    const bool ready = BusEngine::instance().ready();
+    const bool irq = BusEngine::instance().irq();
+
+    if (instance_) {
+        char line[128];
+        snprintf(line, sizeof(line), "[BUS] WRITE_EX addr=0x%04X data=0x%04X %s time=%lu us READY=%u IRQ=%u\n",
+                 addr, data, ok ? "OK" : "TIMEOUT", (unsigned long)timeUs, ready ? 1u : 0u, irq ? 1u : 0u);
+        instance_->append(line);
+    }
+
+    pushResultTable(L, ok, addr, data, ready, irq, timeUs, ok ? nullptr : "bus write timeout");
+    return 1;
+}
+
 int ScriptEngine::l_bus_read(lua_State* L) {
     const uint16_t addr = (uint16_t)luaL_checkinteger(L, 1);
     uint16_t value = 0;
@@ -183,6 +241,54 @@ int ScriptEngine::l_bus_read(lua_State* L) {
         return 2;
     }
     lua_pushinteger(L, value);
+    return 1;
+}
+
+int ScriptEngine::l_bus_read_ex(lua_State* L) {
+    const uint16_t addr = (uint16_t)luaL_checkinteger(L, 1);
+    uint16_t value = 0;
+    const uint32_t started = DWT->CYCCNT;
+    const bool ok = BusEngine::instance().read(addr, value);
+    const uint32_t timeUs = elapsedUs(started);
+    const bool ready = BusEngine::instance().ready();
+    const bool irq = BusEngine::instance().irq();
+
+    if (instance_) {
+        char line[128];
+        snprintf(line, sizeof(line), "[BUS] READ_EX addr=0x%04X -> 0x%04X %s time=%lu us READY=%u IRQ=%u\n",
+                 addr, value, ok ? "OK" : "TIMEOUT", (unsigned long)timeUs, ready ? 1u : 0u, irq ? 1u : 0u);
+        instance_->append(line);
+    }
+
+    pushResultTable(L, ok, addr, value, ready, irq, timeUs, ok ? nullptr : "bus read timeout");
+    return 1;
+}
+
+int ScriptEngine::l_bus_expect(lua_State* L) {
+    const uint16_t addr = (uint16_t)luaL_checkinteger(L, 1);
+    const uint16_t expected = (uint16_t)luaL_checkinteger(L, 2);
+    const uint16_t mask = (uint16_t)luaL_optinteger(L, 3, 0xFFFFu);
+
+    uint16_t value = 0;
+    const uint32_t started = DWT->CYCCNT;
+    const bool readOk = BusEngine::instance().read(addr, value);
+    const uint32_t timeUs = elapsedUs(started);
+    const bool ready = BusEngine::instance().ready();
+    const bool irq = BusEngine::instance().irq();
+    const bool matched = readOk && ((value & mask) == (expected & mask));
+    const bool ok = readOk && matched;
+    const char* error = !readOk ? "bus read timeout" : (!matched ? "value mismatch" : nullptr);
+
+    if (instance_) {
+        char line[160];
+        snprintf(line, sizeof(line),
+                 "[BUS] EXPECT addr=0x%04X expected=0x%04X actual=0x%04X mask=0x%04X %s time=%lu us\n",
+                 addr, expected, value, mask, ok ? "OK" : (readOk ? "MISMATCH" : "TIMEOUT"),
+                 (unsigned long)timeUs);
+        instance_->append(line);
+    }
+
+    pushResultTable(L, ok, addr, value, ready, irq, timeUs, error, true, expected, mask, matched);
     return 1;
 }
 
@@ -248,7 +354,10 @@ void ScriptEngine::registerApi() {
 
     lua_newtable(L_);
     lua_pushcfunction(L_, l_bus_write);       lua_setfield(L_, -2, "write");
+    lua_pushcfunction(L_, l_bus_write_ex);    lua_setfield(L_, -2, "write_ex");
     lua_pushcfunction(L_, l_bus_read);        lua_setfield(L_, -2, "read");
+    lua_pushcfunction(L_, l_bus_read_ex);     lua_setfield(L_, -2, "read_ex");
+    lua_pushcfunction(L_, l_bus_expect);      lua_setfield(L_, -2, "expect");
     lua_pushcfunction(L_, l_bus_ready);       lua_setfield(L_, -2, "ready");
     lua_pushcfunction(L_, l_bus_wait_ready);  lua_setfield(L_, -2, "wait_ready");
     lua_pushcfunction(L_, l_bus_irq);         lua_setfield(L_, -2, "irq");
