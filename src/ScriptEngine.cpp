@@ -1,4 +1,5 @@
 #include "ScriptEngine.h"
+#include "BusEngine.h"
 
 ScriptEngine* ScriptEngine::instance_ = nullptr;
 
@@ -154,37 +155,54 @@ int ScriptEngine::l_delay_us(lua_State* L) {
 int ScriptEngine::l_bus_write(lua_State* L) {
     const uint16_t addr = (uint16_t)luaL_checkinteger(L, 1);
     const uint16_t data = (uint16_t)luaL_checkinteger(L, 2);
+    const bool ok = BusEngine::instance().write(addr, data);
     if (instance_) {
-        char line[80];
-        snprintf(line, sizeof(line), "[BUS] WRITE addr=0x%04X data=0x%04X\n", addr, data);
+        char line[96];
+        snprintf(line, sizeof(line), "[BUS] WRITE addr=0x%04X data=0x%04X %s\n", addr, data, ok ? "OK" : "TIMEOUT");
         instance_->append(line);
     }
-    return 0;
+    lua_pushboolean(L, ok);
+    return 1;
 }
 
 int ScriptEngine::l_bus_read(lua_State* L) {
     const uint16_t addr = (uint16_t)luaL_checkinteger(L, 1);
-    const uint16_t value = 0xFFFF;
+    uint16_t value = 0;
+    const bool ok = BusEngine::instance().read(addr, value);
     if (instance_) {
-        char line[80];
-        snprintf(line, sizeof(line), "[BUS] READ addr=0x%04X -> 0x%04X (stub)\n", addr, value);
+        char line[96];
+        snprintf(line, sizeof(line), "[BUS] READ addr=0x%04X -> 0x%04X %s\n", addr, value, ok ? "OK" : "TIMEOUT");
         instance_->append(line);
+    }
+    if (!ok) {
+        lua_pushnil(L);
+        lua_pushstring(L, "bus read timeout");
+        return 2;
     }
     lua_pushinteger(L, value);
     return 1;
 }
 
-int ScriptEngine::l_bus_ready(lua_State* L) { lua_pushboolean(L, 0); return 1; }
-int ScriptEngine::l_bus_irq(lua_State* L) { lua_pushboolean(L, 0); return 1; }
+int ScriptEngine::l_bus_ready(lua_State* L) {
+    lua_pushboolean(L, BusEngine::instance().ready());
+    return 1;
+}
+
+int ScriptEngine::l_bus_irq(lua_State* L) {
+    lua_pushboolean(L, BusEngine::instance().irq());
+    return 1;
+}
 
 int ScriptEngine::l_bus_invert_data(lua_State* L) {
     const bool enabled = lua_toboolean(L, 1);
+    BusEngine::instance().setInvertData(enabled);
     if (instance_) instance_->append(String("[BUS] invert_data=") + (enabled ? "true\n" : "false\n"));
     return 0;
 }
 
 int ScriptEngine::l_bus_invert_addr(lua_State* L) {
     const bool enabled = lua_toboolean(L, 1);
+    BusEngine::instance().setInvertAddress(enabled);
     if (instance_) instance_->append(String("[BUS] invert_addr=") + (enabled ? "true\n" : "false\n"));
     return 0;
 }
