@@ -23,7 +23,6 @@ void WebServerApp::loop() {
     EthernetClient client = server_.available();
     if (!client) return;
     handleClient(client);
-    delay(1);
     client.stop();
 }
 
@@ -37,6 +36,7 @@ String WebServerApp::readBody(EthernetClient& client, size_t contentLength) {
         while (client.available() && body.length() < contentLength) {
             body += (char)client.read();
         }
+        taskYIELD();
     }
     return body;
 }
@@ -51,9 +51,7 @@ void WebServerApp::handleClient(EthernetClient& client) {
         String line = client.readStringUntil('\n');
         line.trim();
         if (line.length() == 0) break;
-        if (line.startsWith("Content-Length:")) {
-            contentLength = (size_t)line.substring(15).toInt();
-        }
+        if (line.startsWith("Content-Length:")) contentLength = (size_t)line.substring(15).toInt();
     }
 
     if (requestLine.startsWith("GET / ") || requestLine.startsWith("GET /index.html ")) {
@@ -67,23 +65,29 @@ void WebServerApp::handleClient(EthernetClient& client) {
         body += String(current[0]) + "." + String(current[1]) + "." + String(current[2]) + "." + String(current[3]);
         body += "\",\"luaRunning\":";
         body += scripts_.isRunning() ? "true" : "false";
+        body += ",\"luaPending\":";
+        body += scripts_.hasPending() ? "true" : "false";
         body += "}";
         sendResponse(client, 200, "application/json; charset=utf-8", body);
         return;
     }
 
+    if (requestLine.startsWith("GET /api/output ")) {
+        sendResponse(client, 200, "text/plain; charset=utf-8", scripts_.output());
+        return;
+    }
+
     if (requestLine.startsWith("POST /api/run ")) {
         if (contentLength > MAX_BODY) {
-            sendResponse(client, 413, "text/plain; charset=utf-8", "Script too large");
+            sendResponse(client, 413, "text/plain; charset=utf-8", "Script too large\n");
             return;
         }
-
         String code = readBody(client, contentLength);
-        String output;
-        const bool ok = scripts_.run(code, output);
-        String body = ok ? "OK\n" : "ERROR\n";
-        body += output;
-        sendResponse(client, ok ? 200 : 400, "text/plain; charset=utf-8", body);
+        if (!scripts_.submit(code)) {
+            sendResponse(client, 409, "text/plain; charset=utf-8", "Lua busy or queue full\n");
+            return;
+        }
+        sendResponse(client, 200, "text/plain; charset=utf-8", "QUEUED\n");
         return;
     }
 
@@ -110,7 +114,11 @@ void WebServerApp::sendIndex(EthernetClient& client) {
 void WebServerApp::sendResponse(EthernetClient& client, int code, const char* contentType, const String& body) {
     client.print("HTTP/1.1 ");
     client.print(code);
-    client.println(code == 200 ? " OK" : (code == 400 ? " Bad Request" : (code == 404 ? " Not Found" : " Error")));
+    if (code == 200) client.println(" OK");
+    else if (code == 404) client.println(" Not Found");
+    else if (code == 409) client.println(" Conflict");
+    else if (code == 413) client.println(" Payload Too Large");
+    else client.println(" Error");
     client.print("Content-Type: ");
     client.println(contentType);
     client.println("Cache-Control: no-store");
