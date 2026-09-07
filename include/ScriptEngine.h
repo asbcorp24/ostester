@@ -43,7 +43,9 @@ private:
     static int l_bus_write(lua_State* L);
     static int l_bus_read(lua_State* L);
     static int l_bus_ready(lua_State* L);
+    static int l_bus_wait_ready(lua_State* L);
     static int l_bus_irq(lua_State* L);
+    static int l_bus_timing(lua_State* L);
     static int l_bus_invert_data(lua_State* L);
     static int l_bus_invert_addr(lua_State* L);
 
