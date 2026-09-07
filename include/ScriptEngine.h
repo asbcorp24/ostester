@@ -41,13 +41,30 @@ private:
     static int l_print(lua_State* L);
     static int l_delay_us(lua_State* L);
     static int l_bus_write(lua_State* L);
+    static int l_bus_write_ex(lua_State* L);
     static int l_bus_read(lua_State* L);
+    static int l_bus_read_ex(lua_State* L);
+    static int l_bus_expect(lua_State* L);
     static int l_bus_ready(lua_State* L);
     static int l_bus_wait_ready(lua_State* L);
     static int l_bus_irq(lua_State* L);
     static int l_bus_timing(lua_State* L);
     static int l_bus_invert_data(lua_State* L);
     static int l_bus_invert_addr(lua_State* L);
+
+    static uint32_t elapsedUs(uint32_t startedCycles);
+    static void pushResultTable(lua_State* L,
+                                bool ok,
+                                uint16_t address,
+                                uint16_t data,
+                                bool ready,
+                                bool irq,
+                                uint32_t timeUs,
+                                const char* error,
+                                bool hasExpected = false,
+                                uint16_t expected = 0,
+                                uint16_t mask = 0xFFFFu,
+                                bool matched = false);
 
     void clearOutput();
     void append(const String& text);
