@@ -9,12 +9,12 @@
 </style>
 </head>
 <body>
-<div class="top"><div class="brand">OSTester · NUCLEO-F767ZI</div><div class="status"><span id="dot" class="dot"></span><span id="st">проверка связи…</span></div></div>
+<div class="top"><div class="brand">OSTester · NUCLEO-F767ZI · FreeRTOS</div><div class="status"><span id="dot" class="dot"></span><span id="st">проверка связи…</span></div></div>
 <div class="wrap">
   <section class="card">
     <div class="hd">Lua-цикл</div>
     <div class="body">
-      <div class="toolbar"><button class="primary" onclick="runScript()">▶ Запустить</button><button class="danger" onclick="stopScript()">■ Стоп</button><button onclick="exampleClear()">Пример: очистка</button><button onclick="exampleRead()">Пример: чтение</button></div>
+      <div class="toolbar"><button class="primary" onclick="runScript()">▶ Запустить</button><button class="danger" onclick="stopScript()">■ Стоп</button><button onclick="exampleClear()">Пример: очистка</button><button onclick="exampleLoop()">Пример: зациклить</button></div>
       <textarea id="code" spellcheck="false">print("OSTester ready")
 
 bus.invert_addr(false)
@@ -26,24 +26,24 @@ for addr = 0x0000, 0x0010, 2 do
 end
 
 print("done")</textarea>
-      <div class="hint">Код отправляется непосредственно в Lua-интерпретатор STM32. На первом этапе аппаратные bus.read/write подключаются к GPIO следующим слоем.</div>
+      <div class="hint">Lua выполняется в отдельной FreeRTOS-задаче. Ethernet остаётся доступным во время исполнения, а STOP прерывает даже бесконечный Lua-цикл.</div>
     </div>
   </section>
   <section class="card">
     <div class="hd">Результат / журнал</div>
-    <div class="body">
-      <pre id="out">Ожидание запуска…</pre>
-    </div>
+    <div class="body"><pre id="out">Ожидание запуска…</pre></div>
   </section>
 </div>
 <script>
 const code=document.getElementById('code'),out=document.getElementById('out'),dot=document.getElementById('dot'),st=document.getElementById('st');
-async function status(){try{const r=await fetch('/api/status',{cache:'no-store'});const j=await r.json();dot.classList.add('ok');st.textContent='подключено · '+j.ip+(j.luaRunning?' · Lua выполняется':'');}catch(e){dot.classList.remove('ok');st.textContent='нет связи';}}
-async function runScript(){out.textContent='Запуск…\n';try{const r=await fetch('/api/run',{method:'POST',headers:{'Content-Type':'text/plain; charset=utf-8'},body:code.value});out.textContent=await r.text();out.className=r.ok?'good':'bad';}catch(e){out.textContent='Ошибка сети: '+e;out.className='bad';}status();}
-async function stopScript(){try{const r=await fetch('/api/stop',{method:'POST'});out.textContent+=await r.text();}catch(e){out.textContent+='\nОшибка STOP: '+e;}status();}
+let lastRunning=false;
+async function status(){try{const r=await fetch('/api/status',{cache:'no-store'});const j=await r.json();dot.classList.add('ok');let s='подключено · '+j.ip;if(j.luaPending)s+=' · Lua в очереди';if(j.luaRunning)s+=' · Lua выполняется';st.textContent=s;lastRunning=j.luaRunning||j.luaPending;}catch(e){dot.classList.remove('ok');st.textContent='нет связи';}}
+async function refreshOutput(){try{const r=await fetch('/api/output',{cache:'no-store'});if(r.ok){out.textContent=await r.text();out.scrollTop=out.scrollHeight;}}catch(e){}}
+async function runScript(){out.textContent='Постановка скрипта в очередь…\n';try{const r=await fetch('/api/run',{method:'POST',headers:{'Content-Type':'text/plain; charset=utf-8'},body:code.value});const t=await r.text();if(!r.ok){out.textContent=t;out.className='bad';}else{out.className='';await refreshOutput();}}catch(e){out.textContent='Ошибка сети: '+e;out.className='bad';}await status();}
+async function stopScript(){try{await fetch('/api/stop',{method:'POST'});await refreshOutput();}catch(e){out.textContent+='\nОшибка STOP: '+e;}await status();}
 function exampleClear(){code.value=`bus.invert_addr(false)\nbus.invert_data(false)\n\nfor addr = 0x0000, 0x00FE, 2 do\n    bus.write(addr, 0x0000)\n    delay_us(5)\nend\n\nprint("memory clear cycle complete")`;}
-function exampleRead(){code.value=`for addr = 0x0000, 0x0010, 2 do\n    local value = bus.read(addr)\n    print(string.format("0x%04X = 0x%04X", addr, value))\nend`;}
-status();setInterval(status,3000);
+function exampleLoop(){code.value=`print("oscilloscope loop started")\nwhile true do\n    bus.write(0x1234, 0x55AA)\n    delay_us(10)\nend`;}
+status();refreshOutput();setInterval(()=>{status();refreshOutput();},500);
 </script>
 </body>
 </html>
