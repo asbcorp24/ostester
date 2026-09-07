@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
-#include <Ethernet.h>
+#include <STM32Ethernet.h>
 #include "ScriptEngine.h"
 
 class WebServerApp {
