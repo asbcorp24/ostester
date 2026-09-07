@@ -20,52 +20,49 @@
  */
 namespace BoardPins {
 
-constexpr GPIO_TypeDef* ADDR_PORT = GPIOD;
+// GPIOx CMSIS macros are address casts and are not valid C++ constexpr pointers.
+// Use inline variables so they are still centralized in one header without
+// requiring constant-expression evaluation.
+inline GPIO_TypeDef* const ADDR_PORT = GPIOD;
 constexpr uint16_t ADDR_MASK = 0xFFFFu;
 
-constexpr GPIO_TypeDef* DATA_PORT = GPIOE;
+inline GPIO_TypeDef* const DATA_PORT = GPIOE;
 constexpr uint16_t DATA_MASK = 0xFFFFu;
 
-// Control signals. Active levels are defined below.
-constexpr GPIO_TypeDef* WR_PORT = GPIOC;
-constexpr uint16_t WR_PIN = GPIO_PIN_6;      // PC6, timer-capable (TIM3_CH1/TIM8_CH1)
+inline GPIO_TypeDef* const WR_PORT = GPIOC;
+constexpr uint16_t WR_PIN = GPIO_PIN_6;
 
-constexpr GPIO_TypeDef* STROBE_PORT = GPIOC;
-constexpr uint16_t STROBE_PIN = GPIO_PIN_7;  // PC7, timer-capable
+inline GPIO_TypeDef* const STROBE_PORT = GPIOC;
+constexpr uint16_t STROBE_PIN = GPIO_PIN_7;
 
-constexpr GPIO_TypeDef* READY_PORT = GPIOC;
-constexpr uint16_t READY_PIN = GPIO_PIN_8;   // PC8, EXTI8
+inline GPIO_TypeDef* const READY_PORT = GPIOC;
+constexpr uint16_t READY_PIN = GPIO_PIN_8;
 
-constexpr GPIO_TypeDef* IRQ_PORT = GPIOC;
-constexpr uint16_t IRQ_PIN = GPIO_PIN_9;     // PC9, EXTI9
+inline GPIO_TypeDef* const IRQ_PORT = GPIOC;
+constexpr uint16_t IRQ_PIN = GPIO_PIN_9;
 
-constexpr GPIO_TypeDef* CS_PORT = GPIOF;
-constexpr uint16_t CS_PIN = GPIO_PIN_0;      // PF0
+inline GPIO_TypeDef* const CS_PORT = GPIOF;
+constexpr uint16_t CS_PIN = GPIO_PIN_0;
 
-constexpr GPIO_TypeDef* ADDR_OE_PORT = GPIOF;
-constexpr uint16_t ADDR_OE_PIN = GPIO_PIN_1; // PF1
+inline GPIO_TypeDef* const ADDR_OE_PORT = GPIOF;
+constexpr uint16_t ADDR_OE_PIN = GPIO_PIN_1;
 
-constexpr GPIO_TypeDef* DATA_OE_PORT = GPIOF;
-constexpr uint16_t DATA_OE_PIN = GPIO_PIN_2; // PF2
+inline GPIO_TypeDef* const DATA_OE_PORT = GPIOF;
+constexpr uint16_t DATA_OE_PIN = GPIO_PIN_2;
 
-constexpr GPIO_TypeDef* DATA_DIR_PORT = GPIOF;
-constexpr uint16_t DATA_DIR_PIN = GPIO_PIN_3; // PF3
+inline GPIO_TypeDef* const DATA_DIR_PORT = GPIOF;
+constexpr uint16_t DATA_DIR_PIN = GPIO_PIN_3;
 
-// Reserved outputs for additional strobes/control lines requested by the module.
-constexpr GPIO_TypeDef* AUX1_PORT = GPIOF;
-constexpr uint16_t AUX1_PIN = GPIO_PIN_4;     // PF4
-constexpr GPIO_TypeDef* AUX2_PORT = GPIOF;
-constexpr uint16_t AUX2_PIN = GPIO_PIN_5;     // PF5
+inline GPIO_TypeDef* const AUX1_PORT = GPIOF;
+constexpr uint16_t AUX1_PIN = GPIO_PIN_4;
+inline GPIO_TypeDef* const AUX2_PORT = GPIOF;
+constexpr uint16_t AUX2_PIN = GPIO_PIN_5;
 
-// Logic conventions for the external level-shifting bus transceivers.
-// Change here if the selected transceiver has different polarity.
 constexpr bool WR_ACTIVE_LOW = true;
 constexpr bool CS_ACTIVE_LOW = true;
 constexpr bool STROBE_ACTIVE_LOW = true;
 constexpr bool ADDR_OE_ACTIVE_LOW = true;
 constexpr bool DATA_OE_ACTIVE_LOW = true;
-
-// DATA_DIR=true means STM32 -> analyzed module.
 constexpr bool DATA_DIR_TO_MODULE_LEVEL = true;
 
 } // namespace BoardPins
