@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <STM32FreeRTOS.h>
+#include "BusEngine.h"
 #include "ScriptEngine.h"
 #include "WebServerApp.h"
 
@@ -21,6 +22,12 @@ void setup() {
 
     Serial.println();
     Serial.println("OSTester boot / FreeRTOS");
+
+    if (!BusEngine::instance().begin()) {
+        Serial.println("BusTask init failed");
+    } else {
+        Serial.println("BusTask ready");
+    }
 
     if (!scripts.begin()) {
         Serial.println("Lua FreeRTOS task init failed");
