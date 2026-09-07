@@ -11,6 +11,11 @@ public:
     bool write(uint16_t address, uint16_t data, TickType_t timeout = pdMS_TO_TICKS(1000));
     bool read(uint16_t address, uint16_t& value, TickType_t timeout = pdMS_TO_TICKS(1000));
 
+    // Wait for peripheral READY. Edge wake-up is interrupt driven (EXTI8).
+    // Short sub-tick timeouts are checked against the DWT microsecond counter;
+    // longer waits sleep the BusTask using a direct-to-task notification.
+    bool waitReady(uint32_t timeoutUs);
+
     void setInvertAddress(bool enabled) { invertAddress_ = enabled; }
     void setInvertData(bool enabled) { invertData_ = enabled; }
     bool invertAddress() const { return invertAddress_; }
@@ -43,6 +48,9 @@ private:
         bool ok;
     };
 
+    static constexpr uint32_t EVENT_READY = (1u << 0);
+    static constexpr uint32_t EVENT_IRQ   = (1u << 1);
+
     QueueHandle_t queue_ = nullptr;
     TaskHandle_t taskHandle_ = nullptr;
     volatile bool busy_ = false;
@@ -60,6 +68,9 @@ private:
     void execute(Command& cmd);
 
     void initHardware();
+    void initEventInputs();
+    void initPulseTimer();
+
     void setAddress(uint16_t value);
     void setData(uint16_t value);
     uint16_t sampleData() const;
@@ -71,5 +82,9 @@ private:
     void setCs(bool active);
     void setWr(bool active);
     void setStrobe(bool active);
+
     void delayUsPrecise(uint32_t us) const;
+    void timerDelayUs(uint32_t us);
+    void pulseWrTimer(uint32_t us);
+    void pulseStrobeTimer(uint32_t us);
 };
