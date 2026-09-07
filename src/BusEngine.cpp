@@ -29,6 +29,16 @@ void initInput(GPIO_TypeDef* port, uint32_t pins) {
     HAL_GPIO_Init(port, &gpio);
 }
 
+void readyExtiCallback() {
+    const bool state = (BoardPins::READY_PORT->IDR & BoardPins::READY_PIN) != 0;
+    BusEngine::instance().setReadyFromISR(state);
+}
+
+void irqExtiCallback() {
+    const bool state = (BoardPins::IRQ_PORT->IDR & BoardPins::IRQ_PIN) != 0;
+    BusEngine::instance().setIrqFromISR(state);
+}
+
 } // namespace
 
 BusEngine& BusEngine::instance() {
@@ -48,6 +58,9 @@ bool BusEngine::begin() {
             return false;
         }
     }
+
+    readyState_ = ready();
+    irqState_ = irq();
     return true;
 }
 
@@ -57,7 +70,6 @@ void BusEngine::initHardware() {
     __HAL_RCC_GPIOF_CLK_ENABLE();
     __HAL_RCC_GPIOC_CLK_ENABLE();
 
-    // Both 16-bit buses are dedicated whole GPIO ports.
     initOutput(BoardPins::ADDR_PORT, BoardPins::ADDR_MASK);
     initOutput(BoardPins::DATA_PORT, BoardPins::DATA_MASK);
 
@@ -73,14 +85,40 @@ void BusEngine::initHardware() {
     initInput(BoardPins::READY_PORT, BoardPins::READY_PIN);
     initInput(BoardPins::IRQ_PORT, BoardPins::IRQ_PIN);
 
-    // DWT gives sub-RTOS-tick microsecond timing for the first hardware stage.
     CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
     DWT->CYCCNT = 0;
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 
+    initPulseTimer();
+    initEventInputs();
+
     emergencyStop();
     setAddress(0x0000);
     setData(0x0000);
+}
+
+void BusEngine::initPulseTimer() {
+    __HAL_RCC_TIM3_CLK_ENABLE();
+
+    RCC_ClkInitTypeDef clk{};
+    uint32_t flashLatency = 0;
+    HAL_RCC_GetClockConfig(&clk, &flashLatency);
+
+    uint32_t timerClock = HAL_RCC_GetPCLK1Freq();
+    if (clk.APB1CLKDivider != RCC_HCLK_DIV1) timerClock *= 2u;
+
+    TIM3->CR1 = 0;
+    TIM3->PSC = (timerClock / 1000000u) - 1u; // 1 MHz -> 1 timer tick = 1 us
+    TIM3->ARR = 1u;
+    TIM3->CNT = 0u;
+    TIM3->EGR = TIM_EGR_UG;
+    TIM3->SR = 0u;
+}
+
+void BusEngine::initEventInputs() {
+    // Arduino STM32 maps these to PC8/PC9 EXTI lines; callback executes in ISR context.
+    attachInterrupt(digitalPinToInterrupt(PC8), readyExtiCallback, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(PC9), irqExtiCallback, CHANGE);
 }
 
 void BusEngine::setWriteTimingUs(uint32_t setupUs, uint32_t pulseUs, uint32_t holdUs) {
@@ -90,7 +128,7 @@ void BusEngine::setWriteTimingUs(uint32_t setupUs, uint32_t pulseUs, uint32_t ho
 }
 
 bool BusEngine::write(uint16_t address, uint16_t data, TickType_t timeout) {
-    Command cmd{Type::Write, address, data, 0, xTaskGetCurrentTaskHandle(), false};
+    Command cmd{Type::Write, address, data, 0, 0, xTaskGetCurrentTaskHandle(), false};
     Command* ptr = &cmd;
     if (xQueueSend(queue_, &ptr, timeout) != pdPASS) return false;
     if (ulTaskNotifyTake(pdTRUE, timeout) == 0) return false;
@@ -98,11 +136,25 @@ bool BusEngine::write(uint16_t address, uint16_t data, TickType_t timeout) {
 }
 
 bool BusEngine::read(uint16_t address, uint16_t& value, TickType_t timeout) {
-    Command cmd{Type::Read, address, 0, 0, xTaskGetCurrentTaskHandle(), false};
+    Command cmd{Type::Read, address, 0, 0, 0, xTaskGetCurrentTaskHandle(), false};
     Command* ptr = &cmd;
     if (xQueueSend(queue_, &ptr, timeout) != pdPASS) return false;
     if (ulTaskNotifyTake(pdTRUE, timeout) == 0) return false;
     value = cmd.result;
+    return cmd.ok;
+}
+
+bool BusEngine::waitReady(uint32_t timeoutUs, TickType_t queueTimeout) {
+    Command cmd{Type::WaitReady, 0, 0, 0, timeoutUs, xTaskGetCurrentTaskHandle(), false};
+    Command* ptr = &cmd;
+    if (xQueueSend(queue_, &ptr, queueTimeout) != pdPASS) return false;
+
+    TickType_t replyTimeout = queueTimeout;
+    if (timeoutUs >= 1000u) {
+        replyTimeout += pdMS_TO_TICKS((timeoutUs + 999u) / 1000u + 1u);
+    }
+
+    if (ulTaskNotifyTake(pdTRUE, replyTimeout) == 0) return false;
     return cmd.ok;
 }
 
@@ -123,6 +175,11 @@ void BusEngine::taskLoop() {
 }
 
 void BusEngine::execute(Command& cmd) {
+    if (cmd.type == Type::WaitReady) {
+        cmd.ok = waitReadyInBusTask(cmd.timeoutUs);
+        return;
+    }
+
     const uint16_t physicalAddress = invertAddress_
         ? static_cast<uint16_t>(~cmd.address)
         : cmd.address;
@@ -132,29 +189,21 @@ void BusEngine::execute(Command& cmd) {
             ? static_cast<uint16_t>(~cmd.data)
             : cmd.data;
 
-        // 1) Prepare safe direction before enabling the external transceiver.
         setDataEnabled(false);
         setDataDirectionToModule(true);
         setDataOutput();
 
-        // 2) Entire 16-bit words are placed on the buses with one ODR write each.
         setAddress(physicalAddress);
         setData(physicalData);
 
-        // 3) Enable address/data level shifters.
         setAddressEnabled(true);
         setDataEnabled(true);
 
-        // 4) Address/data setup time.
         delayUsPrecise(setupUs_);
 
-        // 5) Select module and generate write pulse.
         setCs(true);
-        setWr(true);
-        delayUsPrecise(pulseUs_);
-        setWr(false);
+        pulseWrTimer(pulseUs_);
 
-        // 6) Hold bus values after the write edge.
         delayUsPrecise(holdUs_);
         setCs(false);
 
@@ -162,8 +211,6 @@ void BusEngine::execute(Command& cmd) {
         return;
     }
 
-    // Generic data-bus sampling cycle. Exact read strobe semantics will be
-    // adapted once the analyzed module's read protocol is defined.
     setDataEnabled(false);
     setAddress(physicalAddress);
     setAddressEnabled(true);
@@ -173,7 +220,7 @@ void BusEngine::execute(Command& cmd) {
 
     delayUsPrecise(setupUs_);
     setCs(true);
-    delayUsPrecise(pulseUs_);
+    timerDelayUs(pulseUs_);
     uint16_t physicalValue = sampleData();
     setCs(false);
     delayUsPrecise(holdUs_);
@@ -183,6 +230,38 @@ void BusEngine::execute(Command& cmd) {
         ? static_cast<uint16_t>(~physicalValue)
         : physicalValue;
     cmd.ok = true;
+}
+
+bool BusEngine::waitReadyInBusTask(uint32_t timeoutUs) {
+    if (readyState_ || ready()) return true;
+    if (timeoutUs == 0) return false;
+
+    // For sub-tick waits we keep BusTask deterministic and check the DWT deadline.
+    // EXTI still updates readyState_ asynchronously.
+    if (timeoutUs < 1000u) {
+        const uint32_t cyclesPerUs = SystemCoreClock / 1000000u;
+        const uint32_t deadline = cyclesPerUs * timeoutUs;
+        const uint32_t start = DWT->CYCCNT;
+        while (static_cast<uint32_t>(DWT->CYCCNT - start) < deadline) {
+            if (readyState_ || ready()) return true;
+        }
+        return readyState_ || ready();
+    }
+
+    const TickType_t ticks = pdMS_TO_TICKS((timeoutUs + 999u) / 1000u);
+    const TickType_t startTick = xTaskGetTickCount();
+
+    for (;;) {
+        if (readyState_ || ready()) return true;
+
+        const TickType_t elapsed = xTaskGetTickCount() - startTick;
+        if (elapsed >= ticks) return false;
+
+        uint32_t events = 0;
+        const TickType_t remain = ticks - elapsed;
+        xTaskNotifyWait(0u, EVENT_READY | EVENT_IRQ, &events, remain);
+        if ((events & EVENT_READY) && (readyState_ || ready())) return true;
+    }
 }
 
 void BusEngine::setAddress(uint16_t value) {
@@ -198,7 +277,6 @@ uint16_t BusEngine::sampleData() const {
 }
 
 void BusEngine::setDataOutput() {
-    // GPIO mode 01 = general purpose output for every PE0..PE15.
     BoardPins::DATA_PORT->MODER = 0x55555555u;
     BoardPins::DATA_PORT->OTYPER = 0x00000000u;
     BoardPins::DATA_PORT->PUPDR = 0x00000000u;
@@ -206,7 +284,6 @@ void BusEngine::setDataOutput() {
 }
 
 void BusEngine::setDataInput() {
-    // GPIO mode 00 = input for every PE0..PE15.
     BoardPins::DATA_PORT->MODER = 0x00000000u;
     BoardPins::DATA_PORT->PUPDR = 0x00000000u;
 }
@@ -253,6 +330,37 @@ void BusEngine::delayUsPrecise(uint32_t us) const {
     }
 }
 
+void BusEngine::timerDelayUs(uint32_t us) {
+    if (us == 0) return;
+
+    // TIM3 is configured at 1 MHz. OPM clears CEN automatically on update.
+    TIM3->CR1 = TIM_CR1_OPM;
+    TIM3->PSC = TIM3->PSC;
+    TIM3->ARR = us - 1u;
+    TIM3->CNT = 0u;
+    TIM3->SR = 0u;
+    TIM3->EGR = TIM_EGR_UG;
+    TIM3->SR = 0u;
+    TIM3->CR1 |= TIM_CR1_CEN;
+
+    while ((TIM3->SR & TIM_SR_UIF) == 0u) {
+        __NOP();
+    }
+    TIM3->SR &= ~TIM_SR_UIF;
+}
+
+void BusEngine::pulseWrTimer(uint32_t us) {
+    setWr(true);
+    timerDelayUs(us == 0 ? 1u : us);
+    setWr(false);
+}
+
+void BusEngine::pulseStrobeTimer(uint32_t us) {
+    setStrobe(true);
+    timerDelayUs(us == 0 ? 1u : us);
+    setStrobe(false);
+}
+
 bool BusEngine::ready() const {
     return (BoardPins::READY_PORT->IDR & BoardPins::READY_PIN) != 0;
 }
@@ -262,6 +370,7 @@ bool BusEngine::irq() const {
 }
 
 void BusEngine::emergencyStop() {
+    TIM3->CR1 &= ~TIM_CR1_CEN;
     setWr(false);
     setStrobe(false);
     setCs(false);
@@ -273,8 +382,18 @@ void BusEngine::emergencyStop() {
 
 void BusEngine::setReadyFromISR(bool state) {
     readyState_ = state;
+    if (!taskHandle_) return;
+
+    BaseType_t higherPriorityTaskWoken = pdFALSE;
+    xTaskNotifyFromISR(taskHandle_, EVENT_READY, eSetBits, &higherPriorityTaskWoken);
+    portYIELD_FROM_ISR(higherPriorityTaskWoken);
 }
 
 void BusEngine::setIrqFromISR(bool state) {
     irqState_ = state;
+    if (!taskHandle_) return;
+
+    BaseType_t higherPriorityTaskWoken = pdFALSE;
+    xTaskNotifyFromISR(taskHandle_, EVENT_IRQ, eSetBits, &higherPriorityTaskWoken);
+    portYIELD_FROM_ISR(higherPriorityTaskWoken);
 }
