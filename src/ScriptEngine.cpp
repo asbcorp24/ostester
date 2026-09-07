@@ -108,7 +108,10 @@ void ScriptEngine::luaHook(lua_State* L, lua_Debug*) {
     taskYIELD();
 }
 
-void ScriptEngine::stop() { stopRequested_ = true; }
+void ScriptEngine::stop() {
+    stopRequested_ = true;
+    BusEngine::instance().emergencyStop();
+}
 
 String ScriptEngine::output() {
     if (!outputMutex_) return output_;
@@ -188,9 +191,41 @@ int ScriptEngine::l_bus_ready(lua_State* L) {
     return 1;
 }
 
+int ScriptEngine::l_bus_wait_ready(lua_State* L) {
+    const lua_Integer timeoutUs = luaL_checkinteger(L, 1);
+    if (timeoutUs < 0) return luaL_error(L, "timeout_us must be >= 0");
+
+    const bool ok = BusEngine::instance().waitReady((uint32_t)timeoutUs);
+    if (instance_) {
+        char line[96];
+        snprintf(line, sizeof(line), "[BUS] WAIT_READY %ld us -> %s\n", (long)timeoutUs, ok ? "READY" : "TIMEOUT");
+        instance_->append(line);
+    }
+    lua_pushboolean(L, ok);
+    return 1;
+}
+
 int ScriptEngine::l_bus_irq(lua_State* L) {
     lua_pushboolean(L, BusEngine::instance().irq());
     return 1;
+}
+
+int ScriptEngine::l_bus_timing(lua_State* L) {
+    const lua_Integer setupUs = luaL_checkinteger(L, 1);
+    const lua_Integer pulseUs = luaL_checkinteger(L, 2);
+    const lua_Integer holdUs = luaL_checkinteger(L, 3);
+    if (setupUs < 0 || pulseUs < 0 || holdUs < 0) {
+        return luaL_error(L, "timing values must be >= 0");
+    }
+
+    BusEngine::instance().setWriteTimingUs((uint32_t)setupUs, (uint32_t)pulseUs, (uint32_t)holdUs);
+    if (instance_) {
+        char line[112];
+        snprintf(line, sizeof(line), "[BUS] timing setup=%ld us pulse=%ld us hold=%ld us\n",
+                 (long)setupUs, (long)pulseUs, (long)holdUs);
+        instance_->append(line);
+    }
+    return 0;
 }
 
 int ScriptEngine::l_bus_invert_data(lua_State* L) {
@@ -215,7 +250,9 @@ void ScriptEngine::registerApi() {
     lua_pushcfunction(L_, l_bus_write);       lua_setfield(L_, -2, "write");
     lua_pushcfunction(L_, l_bus_read);        lua_setfield(L_, -2, "read");
     lua_pushcfunction(L_, l_bus_ready);       lua_setfield(L_, -2, "ready");
+    lua_pushcfunction(L_, l_bus_wait_ready);  lua_setfield(L_, -2, "wait_ready");
     lua_pushcfunction(L_, l_bus_irq);         lua_setfield(L_, -2, "irq");
+    lua_pushcfunction(L_, l_bus_timing);      lua_setfield(L_, -2, "timing");
     lua_pushcfunction(L_, l_bus_invert_data); lua_setfield(L_, -2, "invert_data");
     lua_pushcfunction(L_, l_bus_invert_addr); lua_setfield(L_, -2, "invert_addr");
     lua_setglobal(L_, "bus");
