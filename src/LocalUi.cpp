@@ -14,7 +14,7 @@ bool LocalUi::begin() {
     Wire.setSDA(PB9);
     Wire.begin();
 
-    if (!display_.begin()) return false;
+    display_.begin();
     display_.setFont(u8g2_font_6x12_tf);
 
     edit_ = settings_.config();
