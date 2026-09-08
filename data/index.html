@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>OSTester</title>
 <style>
-:root{font-family:Inter,system-ui,Arial,sans-serif;color:#e8edf5;background:#0d1117}*{box-sizing:border-box}body{margin:0}.top{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:#161b22;border-bottom:1px solid #30363d}.brand{font-weight:800;font-size:20px}.status{font-size:13px;color:#8b949e}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#da3633;margin-right:7px}.dot.ok{background:#2ea043}.wrap{padding:16px;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(340px,.85fr);gap:16px}.card{background:#161b22;border:1px solid #30363d;border-radius:12px;overflow:hidden}.hd{padding:11px 14px;border-bottom:1px solid #30363d;font-weight:700}.body{padding:14px}.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}button{border:1px solid #3b4450;background:#21262d;color:#e8edf5;border-radius:7px;padding:9px 13px;cursor:pointer;font-weight:650}button.primary{background:#238636;border-color:#2ea043}button.danger{background:#6e2630;border-color:#a43b46}input,select{background:#0d1117;color:#e8edf5;border:1px solid #30363d;border-radius:7px;padding:9px 10px}input{min-width:180px}select{min-width:180px}textarea,pre{width:100%;background:#0d1117;color:#d7e0ea;border:1px solid #30363d;border-radius:8px}textarea{height:470px;resize:vertical;padding:12px;font:14px/1.5 Consolas,monospace;tab-size:2}pre{height:520px;margin:0;padding:12px;overflow:auto;white-space:pre-wrap;font:13px/1.45 Consolas,monospace}.hint{font-size:12px;color:#8b949e;margin-top:9px}.storage{padding:10px;margin-bottom:10px;border:1px solid #30363d;border-radius:8px;background:#0f141b}.storageRow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.storageInfo{font-size:12px;color:#8b949e;margin-top:7px}.bad{color:#ff7b72}.good{color:#56d364}@media(max-width:900px){.wrap{grid-template-columns:1fr}textarea,pre{height:360px}}
+:root{font-family:Inter,system-ui,Arial,sans-serif;color:#e8edf5;background:#0d1117}*{box-sizing:border-box}body{margin:0}.top{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:#161b22;border-bottom:1px solid #30363d}.brand{font-weight:800;font-size:20px}.status{font-size:13px;color:#8b949e}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#da3633;margin-right:7px}.dot.ok{background:#2ea043}.wrap{padding:16px;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(340px,.85fr);gap:16px}.card{background:#161b22;border:1px solid #30363d;border-radius:12px;overflow:hidden}.hd{padding:11px 14px;border-bottom:1px solid #30363d;font-weight:700}.body{padding:14px}.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}button{border:1px solid #3b4450;background:#21262d;color:#e8edf5;border-radius:7px;padding:9px 13px;cursor:pointer;font-weight:650}button.primary{background:#238636;border-color:#2ea043}button.danger{background:#6e2630;border-color:#a43b46}button.helpbtn{background:#1f3a5f;border-color:#2f6feb}input,select{background:#0d1117;color:#e8edf5;border:1px solid #30363d;border-radius:7px;padding:9px 10px}input{min-width:180px}select{min-width:180px}textarea,pre{width:100%;background:#0d1117;color:#d7e0ea;border:1px solid #30363d;border-radius:8px}textarea{height:470px;resize:vertical;padding:12px;font:14px/1.5 Consolas,monospace;tab-size:2}pre{height:520px;margin:0;padding:12px;overflow:auto;white-space:pre-wrap;font:13px/1.45 Consolas,monospace}.hint{font-size:12px;color:#8b949e;margin-top:9px}.storage{padding:10px;margin-bottom:10px;border:1px solid #30363d;border-radius:8px;background:#0f141b}.storageRow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.storageInfo{font-size:12px;color:#8b949e;margin-top:7px}.bad{color:#ff7b72}.good{color:#56d364}.helpOverlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.68);z-index:1000;padding:24px}.helpOverlay.open{display:block}.helpPanel{max-width:1000px;height:calc(100vh - 48px);margin:0 auto;background:#161b22;border:1px solid #30363d;border-radius:12px;display:flex;flex-direction:column;overflow:hidden}.helpHead{display:flex;gap:10px;align-items:center;padding:12px 14px;border-bottom:1px solid #30363d}.helpHead strong{font-size:18px}.helpHead input{flex:1}.helpBody{overflow:auto;padding:14px}.helpItem{border:1px solid #30363d;border-radius:8px;margin-bottom:10px;background:#0f141b}.helpItem summary{cursor:pointer;padding:10px 12px;font:700 14px Consolas,monospace}.helpItem .hc{padding:0 12px 12px}.helpItem code{color:#79c0ff}.helpItem pre{height:auto;max-height:none;margin-top:8px}.mini{font-size:12px;color:#8b949e}.insertBtn{margin-top:8px;padding:6px 9px;font-size:12px}@media(max-width:900px){.wrap{grid-template-columns:1fr}textarea,pre{height:360px}.helpOverlay{padding:8px}.helpPanel{height:calc(100vh - 16px)}}
 </style>
 </head>
 <body>
@@ -25,7 +25,7 @@
         </div>
         <div id="storageInfo" class="storageInfo">Flash: загрузка списка…</div>
       </div>
-      <div class="toolbar"><button class="primary" onclick="runScript()">▶ Запустить</button><button class="danger" onclick="stopScript()">■ Стоп</button><button onclick="exampleClear()">Пример: очистка</button><button onclick="exampleLoop()">Пример: зациклить</button></div>
+      <div class="toolbar"><button class="primary" onclick="runScript()">▶ Запустить</button><button class="danger" onclick="stopScript()">■ Стоп</button><button onclick="exampleClear()">Пример: очистка</button><button onclick="exampleLoop()">Пример: зациклить</button><button class="helpbtn" onclick="openHelp()">? Lua Help</button></div>
       <textarea id="code" spellcheck="false">print("OSTester ready")
 
 bus.invert_addr(false)
@@ -45,9 +45,108 @@ print("done")</textarea>
     <div class="body"><pre id="out">Ожидание запуска…</pre></div>
   </section>
 </div>
+
+<div id="helpOverlay" class="helpOverlay" onclick="if(event.target===this)closeHelp()">
+  <div class="helpPanel">
+    <div class="helpHead"><strong>Lua API · OSTester</strong><input id="helpSearch" placeholder="Поиск: read, ready, timing..." oninput="filterHelp()"><button onclick="closeHelp()">Закрыть</button></div>
+    <div id="helpBody" class="helpBody">
+      <details class="helpItem" open data-tags="write bus write запись">
+        <summary>bus.write(address, data)</summary><div class="hc"><div>Записывает 16-битное значение <code>data</code> по 16-битному адресу <code>address</code>.</div><div class="mini">Возвращает: true при успехе, false при timeout.</div><pre>local ok = bus.write(0x1000, 0x55AA)
+if not ok then print("WRITE ERROR") end</pre><button class="insertBtn" onclick="insertSnippet('bus.write(0x1000, 0x55AA)')">Вставить</button></div>
+      </details>
+      <details class="helpItem" data-tags="read bus read чтение">
+        <summary>bus.read(address)</summary><div class="hc"><div>Читает 16-битное значение с DATA[15:0] по адресу.</div><div class="mini">Успех: value. Ошибка: nil, "bus read timeout".</div><pre>local value, err = bus.read(0x1000)
+if value then
+    print(string.format("DATA=0x%04X", value))
+else
+    print(err)
+end</pre><button class="insertBtn" onclick="insertSnippet('local value, err = bus.read(0x1000)\nif value then\n    print(string.format(\"DATA=0x%04X\", value))\nelse\n    print(err)\nend')">Вставить</button></div>
+      </details>
+      <details class="helpItem" data-tags="write_ex extended result запись результат">
+        <summary>bus.write_ex(address, data)</summary><div class="hc"><div>Расширенная запись с подробным результатом операции.</div><div class="mini">Поля: ok, address, data, ready, irq, time_us, error.</div><pre>local r = bus.write_ex(0x1000, 0x55AA)
+print(r.ok, r.time_us, r.ready, r.irq)
+if not r.ok then print(r.error) end</pre><button class="insertBtn" onclick="insertSnippet('local r = bus.write_ex(0x1000, 0x55AA)\nprint(r.ok, r.time_us, r.ready, r.irq)\nif not r.ok then print(r.error) end')">Вставить</button></div>
+      </details>
+      <details class="helpItem" data-tags="read_ex extended result чтение результат">
+        <summary>bus.read_ex(address)</summary><div class="hc"><div>Расширенное чтение.</div><div class="mini">Поля: ok, address, data, ready, irq, time_us, error.</div><pre>local r = bus.read_ex(0x1000)
+if r.ok then
+    print(string.format("DATA=%04X", r.data))
+else
+    print(r.error)
+end</pre><button class="insertBtn" onclick="insertSnippet('local r = bus.read_ex(0x1000)\nif r.ok then\n    print(string.format(\"DATA=%04X\", r.data))\nelse\n    print(r.error)\nend')">Вставить</button></div>
+      </details>
+      <details class="helpItem" data-tags="expect compare mask сравнение маска">
+        <summary>bus.expect(address, expected [, mask])</summary><div class="hc"><div>Читает значение и сравнивает его с ожидаемым.</div><div class="mini">Поля: ok, matched, address, data, expected, mask, time_us, error.</div><pre>local r = bus.expect(0x1000, 0x55AA)
+if not r.ok then
+    print(string.format("FAIL %04X got=%04X", r.address, r.data))
+end
+
+-- только младший байт:
+local r2 = bus.expect(0x2000, 0x005A, 0x00FF)</pre><button class="insertBtn" onclick="insertSnippet('local r = bus.expect(0x1000, 0x55AA)\nif not r.ok then\n    print(string.format(\"FAIL %04X got=%04X\", r.address, r.data))\nend')">Вставить</button></div>
+      </details>
+      <details class="helpItem" data-tags="ready wait_ready timeout готовность ожидание">
+        <summary>bus.wait_ready(timeout_us)</summary><div class="hc"><div>Ждёт активного READY до заданного таймаута в микросекундах.</div><div class="mini">Возвращает true/false.</div><pre>if not bus.wait_ready(5000) then
+    print("READY timeout")
+    return
+end</pre><button class="insertBtn" onclick="insertSnippet('if not bus.wait_ready(5000) then\n    print(\"READY timeout\")\n    return\nend')">Вставить</button></div>
+      </details>
+      <details class="helpItem" data-tags="ready current state готовность состояние">
+        <summary>bus.ready()</summary><div class="hc"><div>Возвращает текущее логическое состояние линии READY.</div><pre>if bus.ready() then
+    print("READY=1")
+end</pre><button class="insertBtn" onclick="insertSnippet('if bus.ready() then\n    print(\"READY=1\")\nend')">Вставить</button></div>
+      </details>
+      <details class="helpItem" data-tags="irq interrupt прерывание">
+        <summary>bus.irq()</summary><div class="hc"><div>Возвращает текущее состояние внешней линии IRQ.</div><pre>if bus.irq() then
+    print("IRQ active")
+end</pre><button class="insertBtn" onclick="insertSnippet('if bus.irq() then\n    print(\"IRQ active\")\nend')">Вставить</button></div>
+      </details>
+      <details class="helpItem" data-tags="timing setup pulse hold wr время тайминги">
+        <summary>bus.timing(setup_us, pulse_us, hold_us)</summary><div class="hc"><div>Задаёт времена цикла записи.</div><pre>-- setup=2 us, WR pulse=5 us, hold=3 us
+bus.timing(2, 5, 3)</pre><button class="insertBtn" onclick="insertSnippet('bus.timing(2, 5, 3)')">Вставить</button></div>
+      </details>
+      <details class="helpItem" data-tags="invert addr address inversion инверсия адрес">
+        <summary>bus.invert_addr(enabled)</summary><div class="hc"><div>Включает/отключает физическую инверсию адресной шины. В Lua значения остаются логическими.</div><pre>bus.invert_addr(false)</pre><button class="insertBtn" onclick="insertSnippet('bus.invert_addr(false)')">Вставить</button></div>
+      </details>
+      <details class="helpItem" data-tags="invert data inversion инверсия данные">
+        <summary>bus.invert_data(enabled)</summary><div class="hc"><div>Включает/отключает инверсию DATA[15:0].</div><pre>bus.invert_data(false)</pre><button class="insertBtn" onclick="insertSnippet('bus.invert_data(false)')">Вставить</button></div>
+      </details>
+      <details class="helpItem" data-tags="delay us delay_us задержка микросекунды">
+        <summary>delay_us(us)</summary><div class="hc"><div>Микросекундная задержка внутри Lua-сценария.</div><pre>delay_us(10)</pre><button class="insertBtn" onclick="insertSnippet('delay_us(10)')">Вставить</button></div>
+      </details>
+      <details class="helpItem" data-tags="print log вывод журнал">
+        <summary>print(...)</summary><div class="hc"><div>Выводит текст и значения в веб-журнал OSTester.</div><pre>print("start")
+print(string.format("DATA=%04X", value))</pre><button class="insertBtn" onclick="insertSnippet('print(\"start\")')">Вставить</button></div>
+      </details>
+      <details class="helpItem" data-tags="example memory test цикл память">
+        <summary>Пример: запись + проверка диапазона</summary><div class="hc"><pre>bus.invert_addr(false)
+bus.invert_data(false)
+bus.timing(2, 5, 3)
+
+local errors = 0
+for addr = 0x0000, 0x00FE, 2 do
+    local expected = 0x55AA
+    local w = bus.write_ex(addr, expected)
+    if not w.ok then
+        errors = errors + 1
+        print(string.format("WRITE ERROR %04X", addr))
+    else
+        local r = bus.expect(addr, expected)
+        if not r.ok then
+            errors = errors + 1
+            print(string.format("DEFECT %04X expected=%04X actual=%04X", addr, expected, r.data))
+        end
+    end
+end
+print("Errors:", errors)</pre><button class="insertBtn" onclick="insertSnippet('bus.invert_addr(false)\nbus.invert_data(false)\nbus.timing(2, 5, 3)\n\nlocal errors = 0\nfor addr = 0x0000, 0x00FE, 2 do\n    local expected = 0x55AA\n    local w = bus.write_ex(addr, expected)\n    if not w.ok then\n        errors = errors + 1\n        print(string.format(\"WRITE ERROR %04X\", addr))\n    else\n        local r = bus.expect(addr, expected)\n        if not r.ok then\n            errors = errors + 1\n            print(string.format(\"DEFECT %04X expected=%04X actual=%04X\", addr, expected, r.data))\n        end\n    end\nend\nprint(\"Errors:\", errors)')">Вставить</button></div>
+      </details>
+    </div>
+  </div>
+</div>
+
 <script>
 const code=document.getElementById('code'),out=document.getElementById('out'),dot=document.getElementById('dot'),st=document.getElementById('st');
 const scriptList=document.getElementById('scriptList'),scriptName=document.getElementById('scriptName'),storageInfo=document.getElementById('storageInfo');
+const helpOverlay=document.getElementById('helpOverlay'),helpSearch=document.getElementById('helpSearch');
 let lastRunning=false,storeMeta={maxScripts:0,maxScriptBytes:0,scripts:[]};
 async function status(){try{const r=await fetch('/api/status',{cache:'no-store'});const j=await r.json();dot.classList.add('ok');let s='подключено · '+j.ip;if(j.luaPending)s+=' · Lua в очереди';if(j.luaRunning)s+=' · Lua выполняется';st.textContent=s;lastRunning=j.luaRunning||j.luaPending;}catch(e){dot.classList.remove('ok');st.textContent='нет связи';}}
 async function refreshOutput(){try{const r=await fetch('/api/output',{cache:'no-store'});if(r.ok){out.textContent=await r.text();out.scrollTop=out.scrollHeight;}}catch(e){}}
@@ -61,6 +160,11 @@ async function runScript(){out.textContent='Постановка скрипта 
 async function stopScript(){try{await fetch('/api/stop',{method:'POST'});await refreshOutput();}catch(e){out.textContent+='\nОшибка STOP: '+e;}await status();}
 function exampleClear(){code.value=`bus.invert_addr(false)\nbus.invert_data(false)\n\nfor addr = 0x0000, 0x00FE, 2 do\n    bus.write(addr, 0x0000)\n    delay_us(5)\nend\n\nprint("memory clear cycle complete")`;}
 function exampleLoop(){code.value=`print("oscilloscope loop started")\nwhile true do\n    bus.write(0x1234, 0x55AA)\n    delay_us(10)\nend`;}
+function openHelp(){helpOverlay.classList.add('open');helpSearch.value='';filterHelp();setTimeout(()=>helpSearch.focus(),50)}
+function closeHelp(){helpOverlay.classList.remove('open')}
+function filterHelp(){const q=helpSearch.value.trim().toLowerCase();document.querySelectorAll('.helpItem').forEach(el=>{const hay=(el.dataset.tags+' '+el.textContent).toLowerCase();el.style.display=!q||hay.includes(q)?'block':'none';});}
+function insertSnippet(s){const start=code.selectionStart||0,end=code.selectionEnd||0;const before=code.value.slice(0,start),after=code.value.slice(end);const sep=before&& !before.endsWith('\n')?'\n':'';code.value=before+sep+s+'\n'+after;code.focus();const p=(before+sep+s+'\n').length;code.setSelectionRange(p,p);closeHelp();}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&helpOverlay.classList.contains('open'))closeHelp();if(e.key==='F1'){e.preventDefault();openHelp();}});
 status();refreshOutput();refreshScripts();setInterval(()=>{status();refreshOutput();},500);
 </script>
 </body>
