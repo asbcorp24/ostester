@@ -23,7 +23,7 @@ public:
 
 private:
     static constexpr uint32_t STORE_MAGIC = 0x4F535453u; // 'OSTS'
-    static constexpr uint16_t STORE_VERSION = 1;
+    static constexpr uint16_t STORE_VERSION = 2;
     static constexpr uint32_t SLOT_MAGIC = 0x4C554131u;  // 'LUA1'
 
     struct Header {
@@ -42,8 +42,9 @@ private:
         char code[MAX_SCRIPT + 1];
     };
 
-    static constexpr int HEADER_ADDR = 0;
-    static constexpr int SLOT_BASE = sizeof(Header);
+    // 0..255 are reserved for NetworkSettings / local UI configuration.
+    static constexpr int HEADER_ADDR = 256;
+    static constexpr int SLOT_BASE = HEADER_ADDR + sizeof(Header);
 
     bool initialized_ = false;
 
