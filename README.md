@@ -1,24 +1,23 @@
 # OSTester
 
-Анализатор/формирователь 16-разрядной шины для NUCLEO-F767ZI.
+Анализатор/формирователь 16-разрядной параллельной шины на NUCLEO-F767ZI с Ethernet, веб-интерфейсом, FreeRTOS и встроенным Lua.
 
-## Назначение
+## Что делает устройство
 
-Устройство подключается между STM32 и анализируемым модулем через управляемые шинные формирователи 3.3/5 В и позволяет из веб-интерфейса писать Lua-сценарии для формирования адресов, данных, циклов записи/чтения и проверки ответов периферии.
+OSTester подключается к анализируемому модулю через шинные формирователи 3.3/5 В и позволяет из браузера:
 
-Поддерживаемые линии:
+- писать и запускать Lua-сценарии;
+- формировать 16-битный адрес и 16-битные данные;
+- выполнять запись/чтение;
+- управлять WR, CS, STROBE, OE и DIR;
+- ждать READY;
+- контролировать IRQ;
+- задавать микросекундные тайминги;
+- проверять прочитанные значения;
+- сохранять Lua-скрипты во внутреннюю Flash STM32;
+- открывать, перезаписывать и удалять сохранённые скрипты после перезагрузки.
 
-- DATA[15:0] — двунаправленная 16-битная шина, 3-state;
-- ADDR[15:0] — однонаправленная 16-битная шина;
-- WR — запись;
-- CS — выбор устройства;
-- STROBE — дополнительный строб;
-- READY — готовность периферии;
-- IRQ — внешнее прерывание;
-- DATA_OE / DATA_DIR — управление формирователем DATA;
-- ADDR_OE — управление формирователем ADDR.
-
-## Архитектура FreeRTOS
+## Архитектура
 
 ```text
 Browser
@@ -40,7 +39,21 @@ GPIO + DWT + TIM3 + EXTI
 Analyzed module
 ```
 
-Веб, Lua и аппаратная шина работают независимо. HTTP не ждёт завершения Lua-программы.
+Хранилище Lua работает отдельно:
+
+```text
+Browser
+   |
+Save / Open / Delete
+   |
+HTTP API
+   |
+ScriptStore
+   |
+EEPROM emulation
+   |
+Internal STM32 Flash
+```
 
 ## Распиновка NUCLEO-F767ZI
 
@@ -53,7 +66,7 @@ ADDR1  -> PD1
 ADDR15 -> PD15
 ```
 
-Все 16 адресных линий занимают полный GPIOD, поэтому слово выставляется одной операцией:
+Все 16 линий адреса занимают полный GPIOD:
 
 ```cpp
 GPIOD->ODR = address;
@@ -68,13 +81,13 @@ DATA1  -> PE1
 DATA15 -> PE15
 ```
 
-Выдача 16-битного слова:
+Запись:
 
 ```cpp
 GPIOE->ODR = data;
 ```
 
-Чтение 16-битного слова:
+Чтение:
 
 ```cpp
 uint16_t data = (uint16_t)GPIOE->IDR;
@@ -85,12 +98,12 @@ uint16_t data = (uint16_t)GPIOE->IDR;
 | Сигнал | STM32 | Назначение |
 |---|---|---|
 | WR | PC6 | импульс записи |
-| STROBE | PC7 | дополнительный аппаратный строб |
-| READY | PC8 | EXTI8, готовность периферии |
-| IRQ | PC9 | EXTI9, внешнее прерывание |
+| STROBE | PC7 | дополнительный строб |
+| READY | PC8 | EXTI8 |
+| IRQ | PC9 | EXTI9 |
 | CS | PF0 | выбор устройства |
-| ADDR_OE | PF1 | разрешение адресного формирователя |
-| DATA_OE | PF2 | разрешение DATA / Hi-Z |
+| ADDR_OE | PF1 | OE адресного формирователя |
+| DATA_OE | PF2 | OE DATA / Hi-Z |
 | DATA_DIR | PF3 | направление DATA |
 | AUX1 | PF4 | резерв |
 | AUX2 | PF5 | резерв |
@@ -99,7 +112,7 @@ uint16_t data = (uint16_t)GPIOE->IDR;
 
 ## Важно: PD8/PD9 и ST-LINK VCP
 
-Чтобы использовать полный GPIOD как ADDR[15:0]:
+Для полного GPIOD:
 
 ```text
 SB5 = OPEN
@@ -108,7 +121,32 @@ SB7 = CLOSED
 SB4 = CLOSED
 ```
 
-После этого PD8/PD9 доступны на Morpho, но штатный ST-LINK Virtual COM Port через эти линии использовать нельзя. Прошивка и отладка по SWD остаются доступны.
+После этого PD8/PD9 доступны на Morpho. ST-LINK по SWD продолжает работать, но штатный Virtual COM через PD8/PD9 использовать нельзя.
+
+## Ethernet
+
+Сначала используется DHCP. Если DHCP не отвечает, применяется:
+
+```text
+IP:      192.168.1.77
+Mask:    255.255.255.0
+Gateway: 192.168.1.1
+```
+
+Для прямого подключения к ПК можно задать компьютеру:
+
+```text
+IP:   192.168.1.10
+Mask: 255.255.255.0
+```
+
+После прошивки открыть:
+
+```text
+http://192.168.1.77/
+```
+
+Если DHCP выдал другой адрес, использовать адрес, полученный от роутера.
 
 ## Как выполняется bus.write()
 
@@ -138,55 +176,52 @@ BusTask выполняет:
 По умолчанию:
 
 ```text
-setup = 1 us
+setup    = 1 us
 WR pulse = 2 us
-hold = 1 us
+hold     = 1 us
 ```
 
-Задать времена:
+Из Lua:
 
 ```lua
 bus.timing(2, 5, 3)
 ```
 
-где аргументы — `setup_us`, `pulse_us`, `hold_us`.
-
 ## TIM3
 
-TIM3 работает с частотой 1 МГц:
+TIM3 используется как микросекундная временная база:
 
 ```text
 1 tick = 1 us
 ```
 
-WR формируется аппаратным микросекундным интервалом. FreeRTOS не задаёт длительность импульса.
+Критические импульсы не формируются через `vTaskDelay()` FreeRTOS.
 
-## READY через EXTI
+## READY / IRQ
 
-READY подключён к PC8 / EXTI8.
+READY:
 
 ```text
-READY edge
-   -> EXTI callback
-   -> setReadyFromISR()
-   -> xTaskNotifyFromISR(BusTask)
+PC8 -> EXTI8 -> ISR -> xTaskNotifyFromISR(BusTask)
 ```
 
 Lua:
 
 ```lua
 if bus.wait_ready(5000) then
-    print("READY received")
+    print("READY")
 else
     print("READY timeout")
 end
 ```
 
-`5000` — таймаут в микросекундах.
+IRQ:
 
-## IRQ через EXTI
+```text
+PC9 -> EXTI9 -> ISR -> BusTask notification
+```
 
-IRQ подключён к PC9 / EXTI9.
+Lua:
 
 ```lua
 if bus.irq() then
@@ -199,66 +234,43 @@ end
 ```lua
 bus.invert_addr(true)
 bus.invert_data(true)
-bus.write(0x1234, 0x55AA)
 ```
 
-Lua всегда работает с логическими значениями. Инверсия применяется только при физической выдаче/чтении шины.
-
----
+Lua работает с логическими значениями. Инверсия применяется на физической шине.
 
 # Lua API
 
-## 1. bus.write(address, data)
-
-Простая запись. Возвращает `true` или `false`.
+## bus.write(address, data)
 
 ```lua
 local ok = bus.write(0x1000, 0x55AA)
-
-if ok then
-    print("write OK")
-else
-    print("write timeout")
-end
 ```
 
-## 2. bus.read(address)
+Возвращает `true/false`.
 
-Простое чтение.
+## bus.read(address)
 
 ```lua
 local value, err = bus.read(0x1000)
-
-if value then
-    print(string.format("DATA = 0x%04X", value))
-else
-    print("ERROR:", err)
-end
 ```
 
-При успехе возвращается значение DATA. При ошибке:
+При успехе возвращает DATA, при ошибке `nil, error`.
 
-```text
-nil, "bus read timeout"
-```
-
-## 3. bus.write_ex(address, data)
-
-Расширенная запись. Возвращает Lua-таблицу с результатом операции.
+## bus.write_ex(address, data)
 
 ```lua
 local r = bus.write_ex(0x1000, 0x55AA)
 
-print("ok       =", r.ok)
-print(string.format("address  = 0x%04X", r.address))
-print(string.format("data     = 0x%04X", r.data))
-print("ready    =", r.ready)
-print("irq      =", r.irq)
-print("time_us  =", r.time_us)
-print("error    =", r.error)
+print(r.ok)
+print(r.address)
+print(r.data)
+print(r.ready)
+print(r.irq)
+print(r.time_us)
+print(r.error)
 ```
 
-Формат результата:
+Формат:
 
 ```lua
 {
@@ -266,236 +278,200 @@ print("error    =", r.error)
     address = 0x1000,
     data = 0x55AA,
     ready = false,
-    irq = false,
-    time_us = 9,
-    error = nil
-}
-```
-
-Если операция завершилась ошибкой:
-
-```lua
-{
-    ok = false,
-    address = 0x1000,
-    data = 0x55AA,
-    ready = false,
-    irq = false,
-    time_us = 1000000,
-    error = "bus write timeout"
-}
-```
-
-`time_us` — время выполнения операции от вызова Lua до возврата результата.
-
-## 4. bus.read_ex(address)
-
-Расширенное чтение.
-
-```lua
-local r = bus.read_ex(0x1000)
-
-if r.ok then
-    print(string.format(
-        "ADDR=%04X DATA=%04X time=%u us",
-        r.address,
-        r.data,
-        r.time_us
-    ))
-else
-    print("READ ERROR:", r.error)
-end
-```
-
-Результат:
-
-```lua
-{
-    ok = true,
-    address = 0x1000,
-    data = 0xA55A,
-    ready = true,
-    irq = false,
-    time_us = 7,
-    error = nil
-}
-```
-
-Путь данных:
-
-```text
-Analyzed module
-      |
-DATA[15:0]
-      |
-GPIOE->IDR
-      |
-BusTask
-      |
-Lua r.data
-      |
-print()
-      |
-WebTask
-      |
-Browser
-```
-
-## 5. bus.expect(address, expected [, mask])
-
-Читает значение по адресу и сразу сравнивает его с ожидаемым.
-
-Простая проверка полного 16-битного слова:
-
-```lua
-local r = bus.expect(0x1000, 0x55AA)
-
-if r.ok then
-    print("TEST OK")
-else
-    print(string.format(
-        "FAIL addr=%04X expected=%04X actual=%04X error=%s",
-        r.address,
-        r.expected,
-        r.data,
-        tostring(r.error)
-    ))
-end
-```
-
-Результат успешной проверки:
-
-```lua
-{
-    ok = true,
-    matched = true,
-    address = 0x1000,
-    data = 0x55AA,
-    expected = 0x55AA,
-    mask = 0xFFFF,
-    ready = true,
     irq = false,
     time_us = 8,
     error = nil
 }
 ```
 
-Если значение отличается:
+## bus.read_ex(address)
 
 ```lua
-{
-    ok = false,
-    matched = false,
-    address = 0x1000,
-    data = 0x55AB,
-    expected = 0x55AA,
-    mask = 0xFFFF,
-    error = "value mismatch"
-}
+local r = bus.read_ex(0x1000)
+
+if r.ok then
+    print(string.format("DATA=%04X", r.data))
+else
+    print(r.error)
+end
 ```
 
-### Маска сравнения
+Путь результата:
 
-Третий аргумент позволяет проверять только выбранные биты.
+```text
+Module -> DATA[15:0] -> GPIOE->IDR -> BusTask -> Lua -> print() -> Web
+```
 
-Например, проверить только младший байт:
+## bus.expect(address, expected [, mask])
+
+```lua
+local r = bus.expect(0x1000, 0x55AA)
+```
+
+Возвращает в том числе:
+
+```lua
+r.ok
+r.matched
+r.address
+r.data
+r.expected
+r.mask
+r.time_us
+r.error
+```
+
+Проверка только младшего байта:
 
 ```lua
 local r = bus.expect(0x2000, 0x005A, 0x00FF)
 ```
 
-Сравнивается:
+## Остальные функции
+
+```lua
+bus.wait_ready(timeout_us)
+bus.ready()
+bus.irq()
+bus.timing(setup_us, pulse_us, hold_us)
+bus.invert_addr(enabled)
+bus.invert_data(enabled)
+delay_us(us)
+```
+
+# Постоянное хранение Lua во Flash
+
+Lua-скрипты теперь можно сохранять прямо из веб-интерфейса. Используется `ScriptStore`, который работает через EEPROM-emulation STM32 core во внутренней Flash микроконтроллера.
+
+Файлы проекта:
 
 ```text
-actual   & 0x00FF
-expected & 0x00FF
+include/ScriptStore.h
+src/ScriptStore.cpp
 ```
 
-Это удобно для статусных регистров, где часть битов может меняться независимо.
-
-## 6. bus.wait_ready(timeout_us)
-
-```lua
-local ready = bus.wait_ready(5000)
-```
-
-Возвращает:
+## Лимиты текущей версии
 
 ```text
-true  - READY появился до таймаута
-false - таймаут
+Количество слотов:       6
+Максимум имени:          31 символ
+Максимум Lua-скрипта:    1900 байт
 ```
 
-## 7. bus.ready()
+Разрешённые символы имени:
 
-Текущее состояние READY:
-
-```lua
-if bus.ready() then
-    print("READY=1")
-end
+```text
+A-Z a-z 0-9 _ - .
 ```
 
-## 8. bus.irq()
+Примеры:
 
-Текущее состояние IRQ:
-
-```lua
-if bus.irq() then
-    print("IRQ=1")
-end
+```text
+memory_test.lua
+clear_bus.lua
+module_1.lua
+osc_wr.lua
 ```
 
-## 9. bus.timing(setup_us, pulse_us, hold_us)
+## Что хранится в каждом слоте
+
+```text
+magic
+length
+checksum
+name
+Lua source code
+```
+
+Для кода рассчитывается контрольная сумма. Повреждённая запись не будет выдана как корректный скрипт.
+
+После выключения питания или reset сохранённые скрипты остаются во Flash.
+
+## Веб-интерфейс хранения
+
+Над редактором Lua теперь есть:
+
+```text
+[список скриптов]
+[имя скрипта]
+[Новый]
+[Открыть]
+[Сохранить]
+[Удалить]
+```
+
+Типичный порядок:
+
+```text
+1. написать Lua
+2. указать имя memory_test.lua
+3. нажать Сохранить
+4. ScriptStore записывает код во Flash
+5. после перезагрузки открыть список
+6. выбрать memory_test.lua
+7. нажать Открыть
+8. нажать Запустить
+```
+
+При повторном сохранении с тем же именем слот перезаписывается.
+
+## HTTP API скриптов
+
+Получить список:
+
+```text
+GET /api/scripts
+```
+
+Ответ:
+
+```json
+{
+  "ok": true,
+  "maxScripts": 6,
+  "maxScriptBytes": 1900,
+  "scripts": [
+    {
+      "name": "memory_test.lua",
+      "length": 412,
+      "checksum": 123456789
+    }
+  ]
+}
+```
+
+Открыть:
+
+```text
+GET /api/script?name=memory_test.lua
+```
+
+Сохранить:
+
+```text
+POST /api/script?name=memory_test.lua
+Content-Type: text/plain
+
+<Lua source>
+```
+
+Удалить:
+
+```text
+DELETE /api/script?name=memory_test.lua
+```
+
+## Важное замечание по ресурсу Flash
+
+Внутренняя Flash имеет ограниченный ресурс циклов erase/write. Скрипты рассчитаны на обычное пользовательское сохранение, а не на запись сотни раз в секунду. Для частых логов или больших объёмов позже лучше использовать внешнюю память.
+
+# Пример теста памяти
 
 ```lua
+bus.invert_addr(false)
+bus.invert_data(false)
 bus.timing(2, 5, 3)
-```
 
-## 10. bus.invert_addr(enabled)
-
-```lua
-bus.invert_addr(true)
-```
-
-## 11. bus.invert_data(enabled)
-
-```lua
-bus.invert_data(true)
-```
-
----
-
-# Примеры тестов
-
-## Проверка одной ячейки
-
-```lua
-bus.timing(2, 5, 3)
-
-local w = bus.write_ex(0x1000, 0x55AA)
-if not w.ok then
-    print("WRITE ERROR:", w.error)
-    return
-end
-
-local r = bus.expect(0x1000, 0x55AA)
-
-if r.ok then
-    print("CELL OK")
-else
-    print(string.format(
-        "CELL FAIL: addr=%04X expected=%04X actual=%04X",
-        r.address,
-        r.expected,
-        r.data
-    ))
-end
-```
-
-## Проверка массива адресов
-
-```lua
 local errors = 0
 
 for addr = 0x0000, 0x00FE, 2 do
@@ -503,14 +479,13 @@ for addr = 0x0000, 0x00FE, 2 do
 
     local w = bus.write_ex(addr, expected)
     if not w.ok then
-        print(string.format("WRITE TIMEOUT %04X", addr))
+        print(string.format("WRITE ERROR %04X", addr))
         errors = errors + 1
     else
         local r = bus.expect(addr, expected)
-
         if not r.ok then
             print(string.format(
-                "MISMATCH addr=%04X expected=%04X actual=%04X",
+                "DEFECT addr=%04X expected=%04X actual=%04X",
                 addr,
                 expected,
                 r.data
@@ -520,81 +495,30 @@ for addr = 0x0000, 0x00FE, 2 do
     end
 end
 
-print("Errors:", errors)
-```
-
-## Тест шаблона 0xAAAA / 0x5555
-
-```lua
-local patterns = {0xAAAA, 0x5555}
-local errors = 0
-
-for _, pattern in ipairs(patterns) do
-    for addr = 0x0000, 0x00FE, 2 do
-        if not bus.write(addr, pattern) then
-            errors = errors + 1
-        end
-    end
-
-    for addr = 0x0000, 0x00FE, 2 do
-        local r = bus.expect(addr, pattern)
-        if not r.ok then
-            errors = errors + 1
-            print(string.format(
-                "FAIL pattern=%04X addr=%04X got=%04X",
-                pattern,
-                addr,
-                r.data
-            ))
-        end
-    end
-end
-
 print("Total errors:", errors)
 ```
 
-## Проверка READY после записи
+# Журнал
 
-```lua
-local w = bus.write_ex(0x1000, 0x1234)
+Lua `print()` и диагностические сообщения BusEngine доступны через:
 
-if not w.ok then
-    print("write failed")
-    return
-end
-
-if not bus.wait_ready(5000) then
-    print("Peripheral READY timeout")
-    return
-end
-
-local r = bus.read_ex(0x1000)
-print(string.format("result = %04X", r.data))
+```text
+GET /api/output
 ```
-
----
-
-# Журнал в веб-интерфейсе
-
-Расширенные операции автоматически пишут диагностические строки.
 
 Пример:
 
 ```text
 [BUS] WRITE_EX addr=0x1000 data=0x55AA OK time=8 us READY=0 IRQ=0
 [BUS] READ_EX addr=0x1000 -> 0x55AA OK time=7 us READY=1 IRQ=0
-[BUS] EXPECT addr=0x1000 expected=0x55AA actual=0x55AA mask=0xFFFF OK time=7 us
+[BUS] EXPECT addr=0x1000 expected=0x55AA actual=0x55AA mask=0xFFFF OK
 ```
 
-Lua `print()` попадает в тот же журнал, который браузер получает через:
+# Безопасный STOP
 
-```text
-GET /api/output
-```
+`POST /api/stop` вызывает остановку Lua и `BusEngine::emergencyStop()`.
 
-## Безопасное состояние
-
-`BusEngine::emergencyStop()` устанавливает:
+Безопасное состояние:
 
 ```text
 WR      = inactive
@@ -606,36 +530,45 @@ DATA    = input / Hi-Z
 TIM3    = stopped
 ```
 
-При `POST /api/stop` Lua получает запрос остановки, а шина немедленно переводится в безопасное состояние.
-
-## HTTP API
+# Основной HTTP API
 
 ```text
-GET  /             web editor
-GET  /api/status   состояние
-GET  /api/output   текущий Lua/log output
-POST /api/run      поставить Lua-код в очередь
-POST /api/stop     остановить Lua и шину
+GET    /                 web editor
+GET    /api/status       состояние платы
+GET    /api/output       Lua/log output
+POST   /api/run          выполнить текущий Lua
+POST   /api/stop         остановить Lua и шину
+GET    /api/scripts      список сохранённых Lua
+GET    /api/script       открыть Lua
+POST   /api/script       сохранить Lua
+DELETE /api/script       удалить Lua
 ```
 
-## Следующие этапы
-
-1. DMA для быстрых массивов и циклов;
-2. `bus.wait_irq()`;
-3. пошаговый режим;
-4. LOOP STEP для осциллографирования;
-5. сохранение Lua-программ и профилей во flash;
-6. веб-панель текущих ADDR/DATA/READY/IRQ;
-7. статистика ошибок и отчёт теста.
-
-## Сборка
+# Сборка
 
 ```bash
+pio run -t clean
 pio run
 ```
 
-Прошивка:
+Прошивка через встроенный ST-LINK:
 
 ```bash
 pio run -t upload
 ```
+
+`platformio.ini` использует:
+
+```ini
+upload_protocol = stlink
+```
+
+## Следующие этапы
+
+1. DMA для быстрых массивов/циклов;
+2. `bus.wait_irq()`;
+3. пошаговый режим STEP;
+4. LOOP STEP для осциллографа;
+5. веб-панель ADDR/DATA/READY/IRQ;
+6. статистика ошибок и отчёты теста;
+7. при необходимости расширение хранения на внешнюю Flash/SD.
