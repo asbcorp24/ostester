@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>OSTester</title>
 <style>
-:root{font-family:Inter,system-ui,Arial,sans-serif;color:#e8edf5;background:#0d1117}*{box-sizing:border-box}body{margin:0}.top{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:#161b22;border-bottom:1px solid #30363d}.brand{font-weight:800;font-size:20px}.status{font-size:13px;color:#8b949e}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#da3633;margin-right:7px}.dot.ok{background:#2ea043}.wrap{padding:16px;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(340px,.85fr);gap:16px}.card{background:#161b22;border:1px solid #30363d;border-radius:12px;overflow:hidden}.hd{padding:11px 14px;border-bottom:1px solid #30363d;font-weight:700}.body{padding:14px}.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}button{border:1px solid #3b4450;background:#21262d;color:#e8edf5;border-radius:7px;padding:9px 13px;cursor:pointer;font-weight:650}button.primary{background:#238636;border-color:#2ea043}button.danger{background:#6e2630;border-color:#a43b46}textarea,pre{width:100%;background:#0d1117;color:#d7e0ea;border:1px solid #30363d;border-radius:8px}textarea{height:520px;resize:vertical;padding:12px;font:14px/1.5 Consolas,monospace;tab-size:2}pre{height:520px;margin:0;padding:12px;overflow:auto;white-space:pre-wrap;font:13px/1.45 Consolas,monospace}.hint{font-size:12px;color:#8b949e;margin-top:9px}.bad{color:#ff7b72}.good{color:#56d364}@media(max-width:900px){.wrap{grid-template-columns:1fr}textarea,pre{height:360px}}
+:root{font-family:Inter,system-ui,Arial,sans-serif;color:#e8edf5;background:#0d1117}*{box-sizing:border-box}body{margin:0}.top{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:#161b22;border-bottom:1px solid #30363d}.brand{font-weight:800;font-size:20px}.status{font-size:13px;color:#8b949e}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#da3633;margin-right:7px}.dot.ok{background:#2ea043}.wrap{padding:16px;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(340px,.85fr);gap:16px}.card{background:#161b22;border:1px solid #30363d;border-radius:12px;overflow:hidden}.hd{padding:11px 14px;border-bottom:1px solid #30363d;font-weight:700}.body{padding:14px}.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}button{border:1px solid #3b4450;background:#21262d;color:#e8edf5;border-radius:7px;padding:9px 13px;cursor:pointer;font-weight:650}button.primary{background:#238636;border-color:#2ea043}button.danger{background:#6e2630;border-color:#a43b46}input,select{background:#0d1117;color:#e8edf5;border:1px solid #30363d;border-radius:7px;padding:9px 10px}input{min-width:180px}select{min-width:180px}textarea,pre{width:100%;background:#0d1117;color:#d7e0ea;border:1px solid #30363d;border-radius:8px}textarea{height:470px;resize:vertical;padding:12px;font:14px/1.5 Consolas,monospace;tab-size:2}pre{height:520px;margin:0;padding:12px;overflow:auto;white-space:pre-wrap;font:13px/1.45 Consolas,monospace}.hint{font-size:12px;color:#8b949e;margin-top:9px}.storage{padding:10px;margin-bottom:10px;border:1px solid #30363d;border-radius:8px;background:#0f141b}.storageRow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.storageInfo{font-size:12px;color:#8b949e;margin-top:7px}.bad{color:#ff7b72}.good{color:#56d364}@media(max-width:900px){.wrap{grid-template-columns:1fr}textarea,pre{height:360px}}
 </style>
 </head>
 <body>
@@ -14,6 +14,17 @@
   <section class="card">
     <div class="hd">Lua-цикл</div>
     <div class="body">
+      <div class="storage">
+        <div class="storageRow">
+          <select id="scriptList"><option value="">— сохранённые скрипты —</option></select>
+          <input id="scriptName" maxlength="31" placeholder="имя, например memory_test.lua">
+          <button onclick="newScript()">Новый</button>
+          <button onclick="loadScript()">Открыть</button>
+          <button onclick="saveScript()">Сохранить</button>
+          <button class="danger" onclick="deleteScript()">Удалить</button>
+        </div>
+        <div id="storageInfo" class="storageInfo">Flash: загрузка списка…</div>
+      </div>
       <div class="toolbar"><button class="primary" onclick="runScript()">▶ Запустить</button><button class="danger" onclick="stopScript()">■ Стоп</button><button onclick="exampleClear()">Пример: очистка</button><button onclick="exampleLoop()">Пример: зациклить</button></div>
       <textarea id="code" spellcheck="false">print("OSTester ready")
 
@@ -26,7 +37,7 @@ for addr = 0x0000, 0x0010, 2 do
 end
 
 print("done")</textarea>
-      <div class="hint">Lua выполняется в отдельной FreeRTOS-задаче. Ethernet остаётся доступным во время исполнения, а STOP прерывает даже бесконечный Lua-цикл.</div>
+      <div class="hint">Скрипты сохраняются во внутреннюю Flash STM32. Lua выполняется в отдельной FreeRTOS-задаче; Ethernet остаётся доступным во время исполнения.</div>
     </div>
   </section>
   <section class="card">
@@ -36,14 +47,21 @@ print("done")</textarea>
 </div>
 <script>
 const code=document.getElementById('code'),out=document.getElementById('out'),dot=document.getElementById('dot'),st=document.getElementById('st');
-let lastRunning=false;
+const scriptList=document.getElementById('scriptList'),scriptName=document.getElementById('scriptName'),storageInfo=document.getElementById('storageInfo');
+let lastRunning=false,storeMeta={maxScripts:0,maxScriptBytes:0,scripts:[]};
 async function status(){try{const r=await fetch('/api/status',{cache:'no-store'});const j=await r.json();dot.classList.add('ok');let s='подключено · '+j.ip;if(j.luaPending)s+=' · Lua в очереди';if(j.luaRunning)s+=' · Lua выполняется';st.textContent=s;lastRunning=j.luaRunning||j.luaPending;}catch(e){dot.classList.remove('ok');st.textContent='нет связи';}}
 async function refreshOutput(){try{const r=await fetch('/api/output',{cache:'no-store'});if(r.ok){out.textContent=await r.text();out.scrollTop=out.scrollHeight;}}catch(e){}}
+async function refreshScripts(selectName=''){try{const r=await fetch('/api/scripts',{cache:'no-store'});if(!r.ok)throw new Error(await r.text());storeMeta=await r.json();scriptList.innerHTML='<option value="">— сохранённые скрипты —</option>';for(const s of storeMeta.scripts){const o=document.createElement('option');o.value=s.name;o.textContent=s.name+' · '+s.length+' B';scriptList.appendChild(o);}if(selectName)scriptList.value=selectName;storageInfo.textContent=`Flash: ${storeMeta.scripts.length}/${storeMeta.maxScripts} скриптов · максимум ${storeMeta.maxScriptBytes} байт на скрипт`;}catch(e){storageInfo.textContent='Ошибка Flash API: '+e;}}
+scriptList.addEventListener('change',()=>{if(scriptList.value)scriptName.value=scriptList.value;});
+async function saveScript(){const name=scriptName.value.trim();if(!name){storageInfo.textContent='Введите имя скрипта';return;}try{const r=await fetch('/api/script?name='+encodeURIComponent(name),{method:'POST',headers:{'Content-Type':'text/plain; charset=utf-8'},body:code.value});const t=await r.text();if(!r.ok)throw new Error(t.trim());storageInfo.textContent='Сохранено: '+name;await refreshScripts(name);}catch(e){storageInfo.textContent='Ошибка сохранения: '+e;}}
+async function loadScript(){const name=(scriptList.value||scriptName.value).trim();if(!name){storageInfo.textContent='Выберите или введите имя';return;}try{const r=await fetch('/api/script?name='+encodeURIComponent(name),{cache:'no-store'});const t=await r.text();if(!r.ok)throw new Error(t.trim());code.value=t;scriptName.value=name;scriptList.value=name;storageInfo.textContent='Открыт: '+name+' · '+t.length+' B';}catch(e){storageInfo.textContent='Ошибка загрузки: '+e;}}
+async function deleteScript(){const name=(scriptList.value||scriptName.value).trim();if(!name){storageInfo.textContent='Выберите скрипт';return;}if(!confirm('Удалить '+name+' из Flash?'))return;try{const r=await fetch('/api/script?name='+encodeURIComponent(name),{method:'DELETE'});const t=await r.text();if(!r.ok)throw new Error(t.trim());scriptName.value='';storageInfo.textContent='Удалён: '+name;await refreshScripts();}catch(e){storageInfo.textContent='Ошибка удаления: '+e;}}
+function newScript(){scriptList.value='';scriptName.value='';code.value='-- новый Lua-скрипт\n\nprint("start")\n';storageInfo.textContent='Новый скрипт: задайте имя и нажмите «Сохранить»';code.focus();}
 async function runScript(){out.textContent='Постановка скрипта в очередь…\n';try{const r=await fetch('/api/run',{method:'POST',headers:{'Content-Type':'text/plain; charset=utf-8'},body:code.value});const t=await r.text();if(!r.ok){out.textContent=t;out.className='bad';}else{out.className='';await refreshOutput();}}catch(e){out.textContent='Ошибка сети: '+e;out.className='bad';}await status();}
 async function stopScript(){try{await fetch('/api/stop',{method:'POST'});await refreshOutput();}catch(e){out.textContent+='\nОшибка STOP: '+e;}await status();}
 function exampleClear(){code.value=`bus.invert_addr(false)\nbus.invert_data(false)\n\nfor addr = 0x0000, 0x00FE, 2 do\n    bus.write(addr, 0x0000)\n    delay_us(5)\nend\n\nprint("memory clear cycle complete")`;}
 function exampleLoop(){code.value=`print("oscilloscope loop started")\nwhile true do\n    bus.write(0x1234, 0x55AA)\n    delay_us(10)\nend`;}
-status();refreshOutput();setInterval(()=>{status();refreshOutput();},500);
+status();refreshOutput();refreshScripts();setInterval(()=>{status();refreshOutput();},500);
 </script>
 </body>
 </html>
