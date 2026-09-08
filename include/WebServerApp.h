@@ -4,10 +4,11 @@
 #include <STM32Ethernet.h>
 #include "ScriptEngine.h"
 #include "ScriptStore.h"
+#include "NetworkSettings.h"
 
 class WebServerApp {
 public:
-    explicit WebServerApp(ScriptEngine& scripts);
+    WebServerApp(ScriptEngine& scripts, NetworkSettings& netSettings);
     bool begin();
     void loop();
     IPAddress ip() const { return Ethernet.localIP(); }
@@ -15,6 +16,7 @@ public:
 private:
     EthernetServer server_{80};
     ScriptEngine& scripts_;
+    NetworkSettings& netSettings_;
     ScriptStore store_;
 
     static constexpr size_t MAX_BODY = 16384;
