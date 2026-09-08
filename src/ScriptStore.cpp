@@ -1,5 +1,6 @@
 #include "ScriptStore.h"
 #include <EEPROM.h>
+#include <cstddef>
 #include <cstring>
 
 namespace {
