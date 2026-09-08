@@ -1,19 +1,29 @@
 #include "WebServerApp.h"
 #include "generated_web.h"
 
-WebServerApp::WebServerApp(ScriptEngine& scripts) : scripts_(scripts) {}
+WebServerApp::WebServerApp(ScriptEngine& scripts, NetworkSettings& netSettings)
+    : scripts_(scripts), netSettings_(netSettings) {}
 
 bool WebServerApp::begin() {
     store_.begin();
 
     byte mac[] = {0x02, 0xF7, 0x67, 0x01, 0x00, 0x01};
+    const auto& cfg = netSettings_.config();
 
-    if (Ethernet.begin(mac) == 0) {
-        IPAddress ip(192, 168, 1, 77);
-        IPAddress dns(192, 168, 1, 1);
-        IPAddress gateway(192, 168, 1, 1);
-        IPAddress subnet(255, 255, 255, 0);
-        Ethernet.begin(mac, ip, dns, gateway, subnet);
+    if (cfg.dhcp) {
+        if (Ethernet.begin(mac) == 0) {
+            Ethernet.begin(mac,
+                           NetworkSettings::toIp(cfg.ip),
+                           NetworkSettings::toIp(cfg.dns),
+                           NetworkSettings::toIp(cfg.gateway),
+                           NetworkSettings::toIp(cfg.mask));
+        }
+    } else {
+        Ethernet.begin(mac,
+                       NetworkSettings::toIp(cfg.ip),
+                       NetworkSettings::toIp(cfg.dns),
+                       NetworkSettings::toIp(cfg.gateway),
+                       NetworkSettings::toIp(cfg.mask));
     }
 
     delay(250);
@@ -155,7 +165,9 @@ void WebServerApp::handleClient(EthernetClient& client) {
         IPAddress current = Ethernet.localIP();
         String body = "{\"ok\":true,\"ip\":\"";
         body += String(current[0]) + "." + String(current[1]) + "." + String(current[2]) + "." + String(current[3]);
-        body += "\",\"luaRunning\":";
+        body += "\",\"dhcp\":";
+        body += netSettings_.config().dhcp ? "true" : "false";
+        body += ",\"luaRunning\":";
         body += scripts_.isRunning() ? "true" : "false";
         body += ",\"luaPending\":";
         body += scripts_.hasPending() ? "true" : "false";
