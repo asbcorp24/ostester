@@ -30,19 +30,27 @@ bool LocalUi::begin() {
     display_.setFont(u8g2_font_6x12_tf);
     oledReady_ = true;
 
-    display_.clearBuffer();
-    display_.drawStr(0, 14, "OSTester BOOT");
-    display_.setCursor(0, 32);
-    display_.print("OLED 0x");
-    if (oledAddress_ < 16) display_.print('0');
-    display_.print(oledAddress_, HEX);
-    display_.drawStr(0, 50, "Starting...");
-    display_.sendBuffer();
+    showBootStage("OLED OK");
 
     edit_ = settings_.config();
     lastAutoPageMs_ = millis();
     autoDiagPage_ = 0;
     return true;
+}
+
+void LocalUi::showBootStage(const char* text) {
+    if (!oledReady_) return;
+    display_.clearBuffer();
+    display_.setFont(u8g2_font_6x12_tf);
+    display_.drawStr(0, 14, "OSTester BOOT");
+    display_.drawHLine(0, 17, 128);
+    display_.setCursor(0, 36);
+    display_.print(text ? text : "...");
+    display_.setCursor(0, 56);
+    display_.print("OLED 0x");
+    if (oledAddress_ < 16) display_.print('0');
+    display_.print(oledAddress_, HEX);
+    display_.sendBuffer();
 }
 
 void LocalUi::loop() {
