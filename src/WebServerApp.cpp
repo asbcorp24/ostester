@@ -11,14 +11,22 @@ bool WebServerApp::begin() {
     const auto& cfg = netSettings_.config();
 
     if (cfg.dhcp) {
+        // Keep the original, known-good behavior:
+        // try DHCP first; if it fails, always fall back to 192.168.1.77.
         if (Ethernet.begin(mac) == 0) {
+            IPAddress fallbackIp(192, 168, 1, 77);
+            IPAddress fallbackDns(192, 168, 1, 1);
+            IPAddress fallbackGateway(192, 168, 1, 1);
+            IPAddress fallbackMask(255, 255, 255, 0);
+
             Ethernet.begin(mac,
-                           NetworkSettings::toIp(cfg.ip),
-                           NetworkSettings::toIp(cfg.dns),
-                           NetworkSettings::toIp(cfg.gateway),
-                           NetworkSettings::toIp(cfg.mask));
+                           fallbackIp,
+                           fallbackDns,
+                           fallbackGateway,
+                           fallbackMask);
         }
     } else {
+        // STATIC mode is used only when the user explicitly disables DHCP.
         Ethernet.begin(mac,
                        NetworkSettings::toIp(cfg.ip),
                        NetworkSettings::toIp(cfg.dns),
@@ -165,9 +173,7 @@ void WebServerApp::handleClient(EthernetClient& client) {
         IPAddress current = Ethernet.localIP();
         String body = "{\"ok\":true,\"ip\":\"";
         body += String(current[0]) + "." + String(current[1]) + "." + String(current[2]) + "." + String(current[3]);
-        body += "\",\"dhcp\":";
-        body += netSettings_.config().dhcp ? "true" : "false";
-        body += ",\"luaRunning\":";
+        body += "\",\"luaRunning\":";
         body += scripts_.isRunning() ? "true" : "false";
         body += ",\"luaPending\":";
         body += scripts_.hasPending() ? "true" : "false";
