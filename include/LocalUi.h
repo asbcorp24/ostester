@@ -2,7 +2,7 @@
 
 #include <Arduino.h>
 #include <U8g2lib.h>
-#include <Encoder.h>
+#include <STM32encoder.h>
 #include "NetworkSettings.h"
 
 class LocalUi {
@@ -18,19 +18,17 @@ private:
     NetworkSettings& settings_;
     NetworkSettings::Config edit_{};
     U8G2_SSD1306_128X64_NONAME_F_HW_I2C display_;
-    Encoder encoder_;
+    STM32encoder* encoder_ = nullptr;
 
     Screen screen_ = Screen::Home;
     Field editField_ = Field::Ip;
     int menuIndex_ = 0;
     int octet_ = 0;
-    long lastEncoder_ = 0;
-    bool lastButton_ = true;
-    uint32_t lastButtonMs_ = 0;
+    int32_t lastEncoder_ = 0;
     uint32_t lastDrawMs_ = 0;
 
-    static constexpr uint32_t ENC_A = PG6;
-    static constexpr uint32_t ENC_B = PG7;
+    static constexpr uint32_t ENC_A = PB6;   // TIM4_CH1
+    static constexpr uint32_t ENC_B = PB7;   // TIM4_CH2
     static constexpr uint32_t ENC_SW = PG8;
 
     void draw();
