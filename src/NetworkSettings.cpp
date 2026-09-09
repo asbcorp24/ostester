@@ -1,12 +1,7 @@
 #include "NetworkSettings.h"
-#include <EEPROM.h>
 #include <cstring>
-#include <cstddef>
 
 namespace {
-constexpr uint32_t FNV_OFFSET = 2166136261u;
-constexpr uint32_t FNV_PRIME  = 16777619u;
-
 bool allZero(const uint8_t v[4]) {
     return v[0] == 0 && v[1] == 0 && v[2] == 0 && v[3] == 0;
 }
@@ -16,21 +11,14 @@ bool allFF(const uint8_t v[4]) {
 }
 
 bool validConfig(const NetworkSettings::Config& cfg) {
-    // 0.0.0.0 and 255.255.255.255 are never valid device addresses here.
     if (allZero(cfg.ip) || allFF(cfg.ip)) return false;
-    // A zero subnet mask indicates erased/corrupted settings.
     if (allZero(cfg.mask)) return false;
     return true;
 }
 }
 
-uint32_t NetworkSettings::checksum(const uint8_t* data, size_t len) {
-    uint32_t h = FNV_OFFSET;
-    for (size_t i = 0; i < len; ++i) {
-        h ^= data[i];
-        h *= FNV_PRIME;
-    }
-    return h;
+uint32_t NetworkSettings::checksum(const uint8_t*, size_t) {
+    return 0;
 }
 
 void NetworkSettings::setDefaults(Config& cfg) {
@@ -45,62 +33,28 @@ void NetworkSettings::setDefaults(Config& cfg) {
     memcpy(cfg.dns, dns, 4);
 }
 
-bool NetworkSettings::readRecord(Record& rec) const {
-    EEPROM.get(EEPROM_ADDR, rec);
-    if (rec.magic != MAGIC || rec.version != VERSION) return false;
-    const uint32_t expected = checksum(reinterpret_cast<const uint8_t*>(&rec), offsetof(Record, checksum));
-    return rec.checksum == expected;
+bool NetworkSettings::readRecord(Record&) const {
+    return false;
 }
 
-bool NetworkSettings::writeRecord(const Config& cfg) {
-    Record rec{};
-    rec.magic = MAGIC;
-    rec.version = VERSION;
-    rec.dhcp = cfg.dhcp ? 1 : 0;
-    memcpy(rec.ip, cfg.ip, 4);
-    memcpy(rec.mask, cfg.mask, 4);
-    memcpy(rec.gateway, cfg.gateway, 4);
-    memcpy(rec.dns, cfg.dns, 4);
-    rec.checksum = checksum(reinterpret_cast<const uint8_t*>(&rec), offsetof(Record, checksum));
-    EEPROM.put(EEPROM_ADDR, rec);
+bool NetworkSettings::writeRecord(const Config&) {
+    // Flash/EEPROM persistence is intentionally disabled while diagnosing
+    // startup and Ethernet. This avoids any blocking flash operation at boot.
     return true;
 }
 
 bool NetworkSettings::begin() {
-    Record rec{};
-    if (!readRecord(rec)) {
-        Serial.println("NETCFG: invalid/missing record -> defaults");
-        setDefaults(config_);
-        return writeRecord(config_);
-    }
-
-    Config loaded{};
-    loaded.dhcp = rec.dhcp != 0;
-    memcpy(loaded.ip, rec.ip, 4);
-    memcpy(loaded.mask, rec.mask, 4);
-    memcpy(loaded.gateway, rec.gateway, 4);
-    memcpy(loaded.dns, rec.dns, 4);
-
-    if (!validConfig(loaded)) {
-        Serial.println("NETCFG: zero/corrupt values -> defaults");
-        setDefaults(config_);
-        return writeRecord(config_);
-    }
-
-    config_ = loaded;
+    setDefaults(config_);
+    runtimeState_ = RuntimeState::NotStarted;
     return true;
 }
 
 bool NetworkSettings::save(const Config& cfg) {
-    if (!validConfig(cfg)) {
-        Serial.println("NETCFG: refused invalid zero IP/mask");
-        return false;
-    }
+    if (!validConfig(cfg)) return false;
     config_ = cfg;
-    return writeRecord(config_);
+    return true;
 }
 
 void NetworkSettings::resetDefaults() {
     setDefaults(config_);
-    writeRecord(config_);
 }
