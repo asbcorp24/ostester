@@ -2,14 +2,26 @@
 #include <Wire.h>
 #include <STM32Ethernet.h>
 
+extern "C" void HAL_TIM_Encoder_MspInit(TIM_HandleTypeDef* htim) {
+    if (htim == nullptr || htim->Instance != TIM4) return;
+
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    __HAL_RCC_TIM4_CLK_ENABLE();
+
+    GPIO_InitTypeDef gpio{};
+    gpio.Pin = GPIO_PIN_6 | GPIO_PIN_7;
+    gpio.Mode = GPIO_MODE_AF_PP;
+    gpio.Pull = GPIO_PULLUP;
+    gpio.Speed = GPIO_SPEED_FREQ_LOW;
+    gpio.Alternate = GPIO_AF2_TIM4;
+    HAL_GPIO_Init(GPIOB, &gpio);
+}
+
 LocalUi::LocalUi(NetworkSettings& settings)
     : settings_(settings),
-      display_(U8G2_R0, U8X8_PIN_NONE),
-      encoder_(ENC_A, ENC_B) {}
+      display_(U8G2_R0, U8X8_PIN_NONE) {}
 
 bool LocalUi::begin() {
-    pinMode(ENC_SW, INPUT_PULLUP);
-
     Wire.setSCL(PB8);
     Wire.setSDA(PB9);
     Wire.begin();
@@ -17,32 +29,46 @@ bool LocalUi::begin() {
     display_.begin();
     display_.setFont(u8g2_font_6x12_tf);
 
-    edit_ = settings_.config();
-    encoder_.write(0);
+    // Hardware quadrature decoder: PB6=TIM4_CH1, PB7=TIM4_CH2.
+    // Construct it here (not as a global object) so Arduino/HAL is already initialized.
+    encoder_ = new STM32encoder(TIM4, 8, 3);
+    if (encoder_ == nullptr || !encoder_->isStarted()) {
+        display_.clearBuffer();
+        display_.drawStr(0, 20, "Encoder TIM4 error");
+        display_.drawStr(0, 38, "PB6 / PB7");
+        display_.sendBuffer();
+        return false;
+    }
+
+    encoder_->setButton(ENC_SW, BTN_POLL);
+    encoder_->pos(0);
     lastEncoder_ = 0;
+
+    edit_ = settings_.config();
     draw();
     return true;
 }
 
 void LocalUi::loop() {
-    const long raw = encoder_.read();
-    const long detent = raw / 4;
-    if (detent != lastEncoder_) {
-        const int delta = (detent > lastEncoder_) ? 1 : -1;
-        lastEncoder_ = detent;
-        handleRotation(delta);
-        draw();
+    if (encoder_ && encoder_->isUpdated()) {
+        const int32_t current = encoder_->pos();
+        if (current != lastEncoder_) {
+            const int delta = (current > lastEncoder_) ? 1 : -1;
+            lastEncoder_ = current;
+            handleRotation(delta);
+            draw();
+        }
     }
 
-    const bool button = digitalRead(ENC_SW);
+    if (encoder_) {
+        const enc_events_t evt = encoder_->button();
+        if (evt == BTN_EVT_CLICK) {
+            handleClick();
+            draw();
+        }
+    }
+
     const uint32_t now = millis();
-    if (lastButton_ && !button && (now - lastButtonMs_) > 180) {
-        lastButtonMs_ = now;
-        handleClick();
-        draw();
-    }
-    lastButton_ = button;
-
     if (screen_ == Screen::Home && now - lastDrawMs_ >= 1000) {
         draw();
     }
