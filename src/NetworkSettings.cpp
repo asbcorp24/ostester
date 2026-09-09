@@ -6,6 +6,22 @@
 namespace {
 constexpr uint32_t FNV_OFFSET = 2166136261u;
 constexpr uint32_t FNV_PRIME  = 16777619u;
+
+bool allZero(const uint8_t v[4]) {
+    return v[0] == 0 && v[1] == 0 && v[2] == 0 && v[3] == 0;
+}
+
+bool allFF(const uint8_t v[4]) {
+    return v[0] == 255 && v[1] == 255 && v[2] == 255 && v[3] == 255;
+}
+
+bool validConfig(const NetworkSettings::Config& cfg) {
+    // 0.0.0.0 and 255.255.255.255 are never valid device addresses here.
+    if (allZero(cfg.ip) || allFF(cfg.ip)) return false;
+    // A zero subnet mask indicates erased/corrupted settings.
+    if (allZero(cfg.mask)) return false;
+    return true;
+}
 }
 
 uint32_t NetworkSettings::checksum(const uint8_t* data, size_t len) {
@@ -53,18 +69,33 @@ bool NetworkSettings::writeRecord(const Config& cfg) {
 bool NetworkSettings::begin() {
     Record rec{};
     if (!readRecord(rec)) {
+        Serial.println("NETCFG: invalid/missing record -> defaults");
         setDefaults(config_);
         return writeRecord(config_);
     }
-    config_.dhcp = rec.dhcp != 0;
-    memcpy(config_.ip, rec.ip, 4);
-    memcpy(config_.mask, rec.mask, 4);
-    memcpy(config_.gateway, rec.gateway, 4);
-    memcpy(config_.dns, rec.dns, 4);
+
+    Config loaded{};
+    loaded.dhcp = rec.dhcp != 0;
+    memcpy(loaded.ip, rec.ip, 4);
+    memcpy(loaded.mask, rec.mask, 4);
+    memcpy(loaded.gateway, rec.gateway, 4);
+    memcpy(loaded.dns, rec.dns, 4);
+
+    if (!validConfig(loaded)) {
+        Serial.println("NETCFG: zero/corrupt values -> defaults");
+        setDefaults(config_);
+        return writeRecord(config_);
+    }
+
+    config_ = loaded;
     return true;
 }
 
 bool NetworkSettings::save(const Config& cfg) {
+    if (!validConfig(cfg)) {
+        Serial.println("NETCFG: refused invalid zero IP/mask");
+        return false;
+    }
     config_ = cfg;
     return writeRecord(config_);
 }
