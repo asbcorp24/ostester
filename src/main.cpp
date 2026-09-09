@@ -30,10 +30,10 @@ static void uiTask(void*) {
 }
 
 void setup() {
-    networkSettings.begin();
-
-    // OLED first and without UART/boot delay.
+    // OLED is the very first subsystem so boot status is visible immediately.
     localUi.begin();
+
+    networkSettings.begin();
 
     // Ethernet starts before BusEngine/Lua.
     web.begin();
