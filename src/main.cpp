@@ -30,34 +30,34 @@ static void uiTask(void*) {
 }
 
 void setup() {
-    // OLED is the first subsystem and shows every boot stage synchronously.
-    localUi.begin();
-
-    localUi.showBootStage("NET CFG");
+    // Restore the original working initialization order.
     networkSettings.begin();
 
-    localUi.showBootStage("ETH BEGIN");
-    web.begin();
-    localUi.showBootStage("ETH OK");
-
-    localUi.showBootStage("BUS BEGIN");
     BusEngine::instance().begin();
-
-    localUi.showBootStage("LUA BEGIN");
     scripts.begin();
 
-    localUi.showBootStage("TASKS");
+    // Ethernet startup is exactly the old working WebServerApp path.
+    web.begin();
+
+    // OLED is passive: it starts only after Ethernet and only displays state/IP.
+    localUi.begin();
+
+    const auto& cfg = networkSettings.config();
+    IPAddress ip = Ethernet.localIP();
+    if (ip[0] || ip[1] || ip[2] || ip[3]) {
+        networkSettings.setRuntimeState(cfg.dhcp
+            ? NetworkSettings::RuntimeState::DhcpOk
+            : NetworkSettings::RuntimeState::Static);
+    }
+
     if (xTaskCreate(webTask, "WebTask", 4096, nullptr, 3, &webTaskHandle) != pdPASS) {
-        localUi.showBootStage("WEB TASK ERR");
         while (true) delay(1000);
     }
 
     if (xTaskCreate(uiTask, "UiTask", 2048, nullptr, 2, &uiTaskHandle) != pdPASS) {
-        localUi.showBootStage("UI TASK ERR");
         while (true) delay(1000);
     }
 
-    localUi.showBootStage("RTOS START");
     vTaskStartScheduler();
 }
 
