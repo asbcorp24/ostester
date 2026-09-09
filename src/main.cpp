@@ -38,6 +38,15 @@ void setup() {
 
     networkSettings.begin();
 
+    // OLED must start BEFORE Ethernet/DHCP. Ethernet.begin() may block for
+    // many seconds while waiting for DHCP; starting the UI first makes the
+    // display come alive immediately and initially show 0.0.0.0.
+    if (!localUi.begin()) {
+        Serial.println("OLED/Encoder init failed");
+    } else {
+        Serial.println("OLED/Encoder ready");
+    }
+
     if (!BusEngine::instance().begin()) {
         Serial.println("BusTask init failed");
     } else {
@@ -51,12 +60,6 @@ void setup() {
     }
 
     web.begin();
-
-    if (!localUi.begin()) {
-        Serial.println("OLED init failed");
-    } else {
-        Serial.println("OLED/Encoder ready");
-    }
 
     IPAddress ip = web.ip();
     Serial.print("HTTP: http://");
