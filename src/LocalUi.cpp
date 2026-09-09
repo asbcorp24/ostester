@@ -78,19 +78,23 @@ bool LocalUi::begin() {
     display_.drawStr(0, 50, "Starting system...");
     display_.sendBuffer();
 
+    // Encoder is optional. The OLED diagnostics work without it.
     encoder_ = new STM32encoder(TIM4, 8, 3);
-    if (encoder_ == nullptr || !encoder_->isStarted()) {
-        display_.clearBuffer();
-        display_.drawStr(0, 20, "Encoder TIM4 error");
-        display_.drawStr(0, 38, "PB6 / PB7");
-        display_.sendBuffer();
-        return false;
+    if (encoder_ != nullptr && encoder_->isStarted()) {
+        encoder_->setButton(ENC_SW, BTN_POLL);
+        encoder_->pos(0);
+        lastEncoder_ = 0;
+    } else {
+        Serial.println("Encoder not available - OLED auto diagnostics enabled");
+        if (encoder_ != nullptr) {
+            delete encoder_;
+            encoder_ = nullptr;
+        }
     }
 
-    encoder_->setButton(ENC_SW, BTN_POLL);
-    encoder_->pos(0);
-    lastEncoder_ = 0;
     edit_ = settings_.config();
+    lastAutoPageMs_ = millis();
+    autoDiagPage_ = 0;
     draw();
     return true;
 }
@@ -117,6 +121,15 @@ void LocalUi::loop() {
     }
 
     const uint32_t now = millis();
+
+    // No encoder required: rotate the main diagnostics automatically.
+    if (screen_ == Screen::Home && now - lastAutoPageMs_ >= 2000) {
+        lastAutoPageMs_ = now;
+        autoDiagPage_ = static_cast<uint8_t>((autoDiagPage_ + 1) % 4);
+        draw();
+        return;
+    }
+
     if ((screen_ == Screen::Home || screen_ == Screen::Diagnostics) && now - lastDrawMs_ >= 1000) {
         draw();
     }
@@ -271,22 +284,35 @@ void LocalUi::draw() {
 }
 
 void LocalUi::drawHome() {
-    display_.drawStr(0, 10, "OSTester");
+    const auto& cfg = settings_.config();
+
+    display_.setCursor(0, 10);
+    display_.print("OSTester NET ");
+    display_.print(autoDiagPage_ + 1);
+    display_.print("/4");
     display_.drawHLine(0, 13, 128);
 
-    display_.setCursor(0, 27);
-    display_.print("IP: ");
-    printIp(display_, Ethernet.localIP());
-
-    display_.setCursor(0, 41);
-    display_.print("Net: ");
-    display_.print(runtimeStateText());
-
-    display_.setCursor(0, 55);
-    display_.print("Link: ");
-    display_.print(Ethernet.linkStatus() == LinkON ? "UP" : "DOWN");
-
-    display_.drawStr(0, 63, "Turn=DIAG  Press=MENU");
+    if (autoDiagPage_ == 0) {
+        display_.setCursor(0, 27); display_.print("State: "); display_.print(runtimeStateText());
+        display_.setCursor(0, 40); display_.print("Link: "); display_.print(Ethernet.linkStatus() == LinkON ? "UP" : "DOWN");
+        display_.setCursor(0, 53); display_.print("IP: "); printIp(display_, Ethernet.localIP());
+        display_.setCursor(0, 64); display_.print("OLED:0x"); if (oledAddress_ < 16) display_.print('0'); display_.print(oledAddress_, HEX);
+    } else if (autoDiagPage_ == 1) {
+        display_.setCursor(0, 27); display_.print("IP  "); printIp(display_, Ethernet.localIP());
+        display_.setCursor(0, 40); display_.print("MSK "); printIp(display_, Ethernet.subnetMask());
+        display_.setCursor(0, 53); display_.print("GW  "); printIp(display_, Ethernet.gatewayIP());
+        display_.setCursor(0, 64); display_.print("DNS "); printIp(display_, Ethernet.dnsServerIP());
+    } else if (autoDiagPage_ == 2) {
+        display_.setCursor(0, 27); display_.print("Saved: "); display_.print(cfg.dhcp ? "DHCP" : "STATIC");
+        display_.setCursor(0, 40); display_.print("IP  "); printIp(display_, cfg.ip);
+        display_.setCursor(0, 53); display_.print("MSK "); printIp(display_, cfg.mask);
+        display_.setCursor(0, 64); display_.print("GW  "); printIp(display_, cfg.gateway);
+    } else {
+        display_.setCursor(0, 27); display_.print("Saved DNS "); printIp(display_, cfg.dns);
+        display_.setCursor(0, 40); display_.print("I2C 0x"); if (oledAddress_ < 16) display_.print('0'); display_.print(oledAddress_, HEX);
+        display_.setCursor(0, 53); display_.print("SCL PB8 SDA PB9");
+        display_.setCursor(0, 64); display_.print("ENC optional");
+    }
 }
 
 void LocalUi::drawDiagnostics() {
@@ -302,7 +328,7 @@ void LocalUi::drawDiagnostics() {
         display_.setCursor(0, 27); display_.print("State: "); display_.print(runtimeStateText());
         display_.setCursor(0, 40); display_.print("Link: "); display_.print(Ethernet.linkStatus() == LinkON ? "UP" : "DOWN");
         display_.setCursor(0, 53); display_.print("OLED: 0x"); if (oledAddress_ < 16) display_.print('0'); display_.print(oledAddress_, HEX);
-        display_.setCursor(0, 64); display_.print("ENC: "); display_.print(encoder_ && encoder_->isStarted() ? "OK" : "ERR");
+        display_.setCursor(0, 64); display_.print("ENC: "); display_.print(encoder_ && encoder_->isStarted() ? "OK" : "N/A");
     } else if (diagPage_ == 1) {
         display_.setCursor(0, 27); display_.print("IP "); printIp(display_, Ethernet.localIP());
         display_.setCursor(0, 40); display_.print("MSK "); printIp(display_, Ethernet.subnetMask());
@@ -316,8 +342,8 @@ void LocalUi::drawDiagnostics() {
     } else {
         display_.setCursor(0, 27); display_.print("DNS "); printIp(display_, cfg.dns);
         display_.setCursor(0, 40); display_.print("SCL PB8 SDA PB9");
-        display_.setCursor(0, 53); display_.print("ENC PB6/PB7");
-        display_.setCursor(0, 64); display_.print("SW PG8");
+        display_.setCursor(0, 53); display_.print("ENC optional");
+        display_.setCursor(0, 64); display_.print("OLED auto diag");
     }
 }
 
