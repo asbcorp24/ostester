@@ -9,6 +9,7 @@ public:
     explicit LocalUi(NetworkSettings& settings);
     bool begin();
     void loop();
+    void showBootStage(const char* text);
 
 private:
     enum class Screen : uint8_t { Home, Diagnostics, Menu, EditIp };
