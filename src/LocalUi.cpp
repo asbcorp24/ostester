@@ -2,33 +2,17 @@
 #include <Wire.h>
 #include <STM32Ethernet.h>
 
-extern "C" void HAL_TIM_Encoder_MspInit(TIM_HandleTypeDef* htim) {
-    if (htim == nullptr || htim->Instance != TIM4) return;
-
-    __HAL_RCC_GPIOB_CLK_ENABLE();
-    __HAL_RCC_TIM4_CLK_ENABLE();
-
-    GPIO_InitTypeDef gpio{};
-    gpio.Pin = GPIO_PIN_6 | GPIO_PIN_7;
-    gpio.Mode = GPIO_MODE_AF_PP;
-    gpio.Pull = GPIO_PULLUP;
-    gpio.Speed = GPIO_SPEED_FREQ_LOW;
-    gpio.Alternate = GPIO_AF2_TIM4;
-    HAL_GPIO_Init(GPIOB, &gpio);
-}
-
 LocalUi::LocalUi(NetworkSettings& settings)
     : settings_(settings),
       display_(U8G2_R0, U8X8_PIN_NONE) {}
 
 uint8_t LocalUi::scanI2c() {
-    // Fast boot: probe only the standard OLED addresses.
-    for (uint8_t addr : {static_cast<uint8_t>(0x3C), static_cast<uint8_t>(0x3D)}) {
-        Wire.beginTransmission(addr);
-        if (Wire.endTransmission() == 0) {
-            return addr;
-        }
-    }
+    Wire.beginTransmission(0x3C);
+    if (Wire.endTransmission() == 0) return 0x3C;
+
+    Wire.beginTransmission(0x3D);
+    if (Wire.endTransmission() == 0) return 0x3D;
+
     return 0;
 }
 
@@ -39,9 +23,7 @@ bool LocalUi::begin() {
     Wire.setClock(100000);
 
     oledAddress_ = scanI2c();
-    if (oledAddress_ == 0) {
-        return false;
-    }
+    if (oledAddress_ == 0) return false;
 
     display_.setI2CAddress(static_cast<uint8_t>(oledAddress_ << 1));
     display_.begin();
@@ -54,49 +36,17 @@ bool LocalUi::begin() {
     display_.print("OLED 0x");
     if (oledAddress_ < 16) display_.print('0');
     display_.print(oledAddress_, HEX);
-    display_.drawStr(0, 50, "NET starting...");
+    display_.drawStr(0, 50, "Starting...");
     display_.sendBuffer();
-
-    // Encoder is optional. OLED diagnostics work without it.
-    encoder_ = new STM32encoder(TIM4, 8, 3);
-    if (encoder_ != nullptr && encoder_->isStarted()) {
-        encoder_->setButton(ENC_SW, BTN_POLL);
-        encoder_->pos(0);
-        lastEncoder_ = 0;
-    } else {
-        if (encoder_ != nullptr) {
-            delete encoder_;
-            encoder_ = nullptr;
-        }
-    }
 
     edit_ = settings_.config();
     lastAutoPageMs_ = millis();
     autoDiagPage_ = 0;
-    draw();
     return true;
 }
 
 void LocalUi::loop() {
     if (!oledReady_) return;
-
-    if (encoder_ && encoder_->isUpdated()) {
-        const int32_t current = encoder_->pos();
-        if (current != lastEncoder_) {
-            const int delta = (current > lastEncoder_) ? 1 : -1;
-            lastEncoder_ = current;
-            handleRotation(delta);
-            draw();
-        }
-    }
-
-    if (encoder_) {
-        const enc_events_t evt = encoder_->button();
-        if (evt == BTN_EVT_CLICK) {
-            handleClick();
-            draw();
-        }
-    }
 
     const uint32_t now = millis();
 
@@ -107,101 +57,13 @@ void LocalUi::loop() {
         return;
     }
 
-    if ((screen_ == Screen::Home || screen_ == Screen::Diagnostics) && now - lastDrawMs_ >= 1000) {
+    if ((screen_ == Screen::Home || screen_ == Screen::Diagnostics) && now - lastDrawMs_ >= 500) {
         draw();
     }
 }
 
-void LocalUi::handleRotation(int delta) {
-    if (screen_ == Screen::Home) {
-        if (delta > 0) { screen_ = Screen::Diagnostics; diagPage_ = 0; }
-        return;
-    }
-
-    if (screen_ == Screen::Diagnostics) {
-        diagPage_ += delta;
-        if (diagPage_ < 0) diagPage_ = 3;
-        if (diagPage_ > 3) diagPage_ = 0;
-        return;
-    }
-
-    if (screen_ == Screen::Menu) {
-        menuIndex_ += delta;
-        if (menuIndex_ < 0) menuIndex_ = 6;
-        if (menuIndex_ > 6) menuIndex_ = 0;
-        return;
-    }
-
-    if (screen_ == Screen::EditIp) {
-        uint8_t* b = fieldBytes(editField_);
-        int v = static_cast<int>(b[octet_]) + delta;
-        if (v < 0) v = 255;
-        if (v > 255) v = 0;
-        b[octet_] = static_cast<uint8_t>(v);
-    }
-}
-
-void LocalUi::handleClick() {
-    if (screen_ == Screen::Home) {
-        edit_ = settings_.config();
-        menuIndex_ = 0;
-        screen_ = Screen::Menu;
-        return;
-    }
-
-    if (screen_ == Screen::Diagnostics) {
-        screen_ = Screen::Home;
-        return;
-    }
-
-    if (screen_ == Screen::EditIp) {
-        ++octet_;
-        if (octet_ >= 4) {
-            octet_ = 0;
-            screen_ = Screen::Menu;
-        }
-        return;
-    }
-
-    switch (menuIndex_) {
-        case 0:
-            edit_.dhcp = !edit_.dhcp;
-            break;
-        case 1:
-            editField_ = Field::Ip;
-            octet_ = 0;
-            screen_ = Screen::EditIp;
-            break;
-        case 2:
-            editField_ = Field::Mask;
-            octet_ = 0;
-            screen_ = Screen::EditIp;
-            break;
-        case 3:
-            editField_ = Field::Gateway;
-            octet_ = 0;
-            screen_ = Screen::EditIp;
-            break;
-        case 4:
-            editField_ = Field::Dns;
-            octet_ = 0;
-            screen_ = Screen::EditIp;
-            break;
-        case 5:
-            settings_.save(edit_);
-            display_.clearBuffer();
-            display_.drawStr(0, 20, "Settings saved");
-            display_.drawStr(0, 38, "Rebooting...");
-            display_.sendBuffer();
-            delay(250);
-            NVIC_SystemReset();
-            break;
-        case 6:
-            edit_ = settings_.config();
-            screen_ = Screen::Home;
-            break;
-    }
-}
+void LocalUi::handleRotation(int) {}
+void LocalUi::handleClick() {}
 
 uint8_t* LocalUi::fieldBytes(Field field) {
     switch (field) {
@@ -238,7 +100,7 @@ void LocalUi::printIp(U8G2& d, const IPAddress& ip) {
 const char* LocalUi::runtimeStateText() const {
     switch (settings_.runtimeState()) {
         case NetworkSettings::RuntimeState::DhcpOk:       return "DHCP OK";
-        case NetworkSettings::RuntimeState::DhcpFallback: return "DHCP->FALLBACK";
+        case NetworkSettings::RuntimeState::DhcpFallback: return "FALLBACK";
         case NetworkSettings::RuntimeState::Static:       return "STATIC";
         default:                                          return "NOT STARTED";
     }
@@ -271,7 +133,11 @@ void LocalUi::drawHome() {
 
     if (autoDiagPage_ == 0) {
         display_.setCursor(0, 27); display_.print("State: "); display_.print(runtimeStateText());
-        display_.setCursor(0, 40); display_.print("Link: "); display_.print(Ethernet.linkStatus() == LinkON ? "UP" : "DOWN");
+        display_.setCursor(0, 40); display_.print("Link: ");
+        const EthernetLinkStatus ls = Ethernet.linkStatus();
+        if (ls == LinkON) display_.print("UP");
+        else if (ls == LinkOFF) display_.print("DOWN");
+        else display_.print("UNKNOWN");
         display_.setCursor(0, 53); display_.print("IP: "); printIp(display_, Ethernet.localIP());
         display_.setCursor(0, 64); display_.print("OLED:0x"); if (oledAddress_ < 16) display_.print('0'); display_.print(oledAddress_, HEX);
     } else if (autoDiagPage_ == 1) {
@@ -285,83 +151,21 @@ void LocalUi::drawHome() {
         display_.setCursor(0, 53); display_.print("MSK "); printIp(display_, cfg.mask);
         display_.setCursor(0, 64); display_.print("GW  "); printIp(display_, cfg.gateway);
     } else {
-        display_.setCursor(0, 27); display_.print("Saved DNS "); printIp(display_, cfg.dns);
+        display_.setCursor(0, 27); display_.print("DNS "); printIp(display_, cfg.dns);
         display_.setCursor(0, 40); display_.print("I2C 0x"); if (oledAddress_ < 16) display_.print('0'); display_.print(oledAddress_, HEX);
         display_.setCursor(0, 53); display_.print("SCL PB8 SDA PB9");
-        display_.setCursor(0, 64); display_.print("ENC optional");
+        display_.setCursor(0, 64); display_.print("ENC DISABLED");
     }
 }
 
-void LocalUi::drawDiagnostics() {
-    const auto& cfg = settings_.config();
-
-    display_.setCursor(0, 10);
-    display_.print("DIAG ");
-    display_.print(diagPage_ + 1);
-    display_.print("/4");
-    display_.drawHLine(0, 13, 128);
-
-    if (diagPage_ == 0) {
-        display_.setCursor(0, 27); display_.print("State: "); display_.print(runtimeStateText());
-        display_.setCursor(0, 40); display_.print("Link: "); display_.print(Ethernet.linkStatus() == LinkON ? "UP" : "DOWN");
-        display_.setCursor(0, 53); display_.print("OLED: 0x"); if (oledAddress_ < 16) display_.print('0'); display_.print(oledAddress_, HEX);
-        display_.setCursor(0, 64); display_.print("ENC: "); display_.print(encoder_ && encoder_->isStarted() ? "OK" : "N/A");
-    } else if (diagPage_ == 1) {
-        display_.setCursor(0, 27); display_.print("IP "); printIp(display_, Ethernet.localIP());
-        display_.setCursor(0, 40); display_.print("MSK "); printIp(display_, Ethernet.subnetMask());
-        display_.setCursor(0, 53); display_.print("GW "); printIp(display_, Ethernet.gatewayIP());
-        display_.setCursor(0, 64); display_.print("DNS "); printIp(display_, Ethernet.dnsServerIP());
-    } else if (diagPage_ == 2) {
-        display_.setCursor(0, 27); display_.print("Saved:"); display_.print(cfg.dhcp ? " DHCP" : " STATIC");
-        display_.setCursor(0, 40); display_.print("IP "); printIp(display_, cfg.ip);
-        display_.setCursor(0, 53); display_.print("MSK "); printIp(display_, cfg.mask);
-        display_.setCursor(0, 64); display_.print("GW "); printIp(display_, cfg.gateway);
-    } else {
-        display_.setCursor(0, 27); display_.print("DNS "); printIp(display_, cfg.dns);
-        display_.setCursor(0, 40); display_.print("SCL PB8 SDA PB9");
-        display_.setCursor(0, 53); display_.print("ENC optional");
-        display_.setCursor(0, 64); display_.print("OLED auto diag");
-    }
-}
+void LocalUi::drawDiagnostics() { drawHome(); }
 
 void LocalUi::drawMenu() {
-    static const char* items[] = {
-        "DHCP", "IP", "MASK", "GATEWAY", "DNS", "SAVE+REBOOT", "BACK"
-    };
-
-    display_.drawStr(0, 10, "NETWORK SETTINGS");
-    display_.drawHLine(0, 13, 128);
-
-    const int first = (menuIndex_ <= 2) ? 0 : menuIndex_ - 2;
-    for (int row = 0; row < 4; ++row) {
-        const int idx = first + row;
-        if (idx > 6) break;
-        const int y = 27 + row * 12;
-        display_.setCursor(0, y);
-        display_.print(idx == menuIndex_ ? ">" : " ");
-        display_.print(items[idx]);
-        if (idx == 0) {
-            display_.print(": ");
-            display_.print(edit_.dhcp ? "ON" : "OFF");
-        }
-    }
+    display_.drawStr(0, 14, "ENCODER DISABLED");
+    display_.drawStr(0, 32, "OLED diagnostics");
+    display_.drawStr(0, 50, "auto mode");
 }
 
 void LocalUi::drawEditIp() {
-    display_.setCursor(0, 10);
-    display_.print("EDIT ");
-    display_.print(fieldName(editField_));
-    display_.drawHLine(0, 13, 128);
-
-    uint8_t* b = fieldBytes(editField_);
-    display_.setCursor(0, 32);
-    printIp(display_, b);
-
-    display_.setCursor(0, 49);
-    display_.print("Octet ");
-    display_.print(octet_ + 1);
-    display_.print(" = ");
-    display_.print(b[octet_]);
-
-    display_.drawStr(0, 63, "Rotate / press=next");
+    display_.drawStr(0, 14, "ENCODER DISABLED");
 }
