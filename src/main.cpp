@@ -31,22 +31,20 @@ static void uiTask(void*) {
 
 void setup() {
     Serial.begin(115200);
-    delay(300);
 
     Serial.println();
     Serial.println("OSTester boot / FreeRTOS");
 
     networkSettings.begin();
 
-    // OLED first, so diagnostics are visible immediately.
+    // OLED first and without artificial boot delay.
     if (!localUi.begin()) {
         Serial.println("OLED init failed");
     } else {
         Serial.println("OLED ready");
     }
 
-    // Ethernet MUST start before BusEngine/Lua so another subsystem cannot
-    // prevent network initialization.
+    // Ethernet starts before BusEngine/Lua.
     Serial.println("Starting Ethernet...");
     web.begin();
     Serial.println("Ethernet begin returned");
@@ -83,5 +81,5 @@ void setup() {
 }
 
 void loop() {
-    // Не используется: после vTaskStartScheduler() работают задачи FreeRTOS.
+    // Not used after vTaskStartScheduler().
 }
