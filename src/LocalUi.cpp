@@ -22,33 +22,20 @@ LocalUi::LocalUi(NetworkSettings& settings)
       display_(U8G2_R0, U8X8_PIN_NONE) {}
 
 uint8_t LocalUi::scanI2c() {
-    Serial.println("I2C scan on PB8(SCL) / PB9(SDA)...");
-    uint8_t first = 0;
-    uint8_t found = 0;
-
-    for (uint8_t addr = 1; addr < 127; ++addr) {
+    // Fast boot: probe only the standard OLED addresses first.
+    // A full 1..126 scan delays display startup noticeably when most
+    // addresses do not acknowledge.
+    for (uint8_t addr : {static_cast<uint8_t>(0x3C), static_cast<uint8_t>(0x3D)}) {
         Wire.beginTransmission(addr);
-        const uint8_t err = Wire.endTransmission();
-        if (err == 0) {
-            ++found;
-            if (first == 0) first = addr;
-            Serial.print("  I2C device found at 0x");
-            if (addr < 16) Serial.print('0');
+        if (Wire.endTransmission() == 0) {
+            Serial.print("OLED found at 0x");
             Serial.println(addr, HEX);
+            return addr;
         }
     }
 
-    if (found == 0) {
-        Serial.println("  No I2C devices found");
-        return 0;
-    }
-
-    for (uint8_t preferred : {static_cast<uint8_t>(0x3C), static_cast<uint8_t>(0x3D)}) {
-        Wire.beginTransmission(preferred);
-        if (Wire.endTransmission() == 0) return preferred;
-    }
-
-    return first;
+    Serial.println("OLED not found at 0x3C/0x3D");
+    return 0;
 }
 
 bool LocalUi::begin() {
@@ -56,7 +43,6 @@ bool LocalUi::begin() {
     Wire.setSDA(PB9);
     Wire.begin();
     Wire.setClock(100000);
-    delay(20);
 
     oledAddress_ = scanI2c();
     if (oledAddress_ == 0) {
@@ -70,12 +56,12 @@ bool LocalUi::begin() {
     oledReady_ = true;
 
     display_.clearBuffer();
-    display_.drawStr(0, 14, "OSTester OLED OK");
+    display_.drawStr(0, 14, "OSTester BOOT");
     display_.setCursor(0, 32);
-    display_.print("I2C: 0x");
+    display_.print("OLED 0x");
     if (oledAddress_ < 16) display_.print('0');
     display_.print(oledAddress_, HEX);
-    display_.drawStr(0, 50, "Starting system...");
+    display_.drawStr(0, 50, "NET starting...");
     display_.sendBuffer();
 
     // Encoder is optional. The OLED diagnostics work without it.
@@ -122,7 +108,6 @@ void LocalUi::loop() {
 
     const uint32_t now = millis();
 
-    // No encoder required: rotate the main diagnostics automatically.
     if (screen_ == Screen::Home && now - lastAutoPageMs_ >= 2000) {
         lastAutoPageMs_ = now;
         autoDiagPage_ = static_cast<uint8_t>((autoDiagPage_ + 1) % 4);
