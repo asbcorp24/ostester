@@ -13,10 +13,20 @@ public:
         uint8_t dns[4];
     };
 
+    enum class RuntimeState : uint8_t {
+        NotStarted,
+        DhcpOk,
+        DhcpFallback,
+        Static
+    };
+
     bool begin();
     const Config& config() const { return config_; }
     bool save(const Config& cfg);
     void resetDefaults();
+
+    void setRuntimeState(RuntimeState state) { runtimeState_ = state; }
+    RuntimeState runtimeState() const { return runtimeState_; }
 
     static IPAddress toIp(const uint8_t v[4]) { return IPAddress(v[0], v[1], v[2], v[3]); }
 
@@ -38,6 +48,7 @@ private:
     };
 
     Config config_{};
+    RuntimeState runtimeState_ = RuntimeState::NotStarted;
 
     static uint32_t checksum(const uint8_t* data, size_t len);
     static void setDefaults(Config& cfg);
