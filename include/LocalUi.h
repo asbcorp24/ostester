@@ -27,6 +27,8 @@ private:
     int diagPage_ = 0;
     int32_t lastEncoder_ = 0;
     uint32_t lastDrawMs_ = 0;
+    uint32_t lastAutoPageMs_ = 0;
+    uint8_t autoDiagPage_ = 0;
     uint8_t oledAddress_ = 0;
     bool oledReady_ = false;
 
