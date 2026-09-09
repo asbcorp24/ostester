@@ -30,53 +30,25 @@ static void uiTask(void*) {
 }
 
 void setup() {
-    Serial.begin(115200);
-
-    Serial.println();
-    Serial.println("OSTester boot / FreeRTOS");
-
     networkSettings.begin();
 
-    // OLED first and without artificial boot delay.
-    if (!localUi.begin()) {
-        Serial.println("OLED init failed");
-    } else {
-        Serial.println("OLED ready");
-    }
+    // OLED first and without UART/boot delay.
+    localUi.begin();
 
     // Ethernet starts before BusEngine/Lua.
-    Serial.println("Starting Ethernet...");
     web.begin();
-    Serial.println("Ethernet begin returned");
 
-    IPAddress ip = web.ip();
-    Serial.print("HTTP: http://");
-    Serial.print(ip);
-    Serial.println("/");
-
-    if (!BusEngine::instance().begin()) {
-        Serial.println("BusTask init failed");
-    } else {
-        Serial.println("BusTask ready");
-    }
-
-    if (!scripts.begin()) {
-        Serial.println("Lua FreeRTOS task init failed");
-    } else {
-        Serial.println("LuaTask ready");
-    }
+    BusEngine::instance().begin();
+    scripts.begin();
 
     if (xTaskCreate(webTask, "WebTask", 4096, nullptr, 3, &webTaskHandle) != pdPASS) {
-        Serial.println("WebTask create failed");
         while (true) delay(1000);
     }
 
     if (xTaskCreate(uiTask, "UiTask", 2048, nullptr, 2, &uiTaskHandle) != pdPASS) {
-        Serial.println("UiTask create failed");
         while (true) delay(1000);
     }
 
-    Serial.println("Starting FreeRTOS scheduler");
     vTaskStartScheduler();
 }
 
