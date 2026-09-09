@@ -7,27 +7,40 @@ WebServerApp::WebServerApp(ScriptEngine& scripts, NetworkSettings& netSettings)
 bool WebServerApp::begin() {
     store_.begin();
 
-    byte mac[] = {0x02, 0xF7, 0x67, 0x01, 0x00, 0x01};
     const auto& cfg = netSettings_.config();
+    IPAddress ip;
+    IPAddress mask;
+    IPAddress gateway;
+    IPAddress dns;
 
-    // Use immediate static startup so boot cannot block in DHCP.
     if (cfg.dhcp) {
+        // Boot immediately with the known-good fallback. DHCP can be restored
+        // later as a non-blocking/controlled operation.
         netSettings_.setRuntimeState(NetworkSettings::RuntimeState::DhcpFallback);
-        Ethernet.begin(mac,
-                       IPAddress(192, 168, 1, 77),
-                       IPAddress(192, 168, 1, 1),
-                       IPAddress(192, 168, 1, 1),
-                       IPAddress(255, 255, 255, 0));
+        ip = IPAddress(192, 168, 1, 77);
+        mask = IPAddress(255, 255, 255, 0);
+        gateway = IPAddress(192, 168, 1, 1);
+        dns = IPAddress(192, 168, 1, 1);
     } else {
         netSettings_.setRuntimeState(NetworkSettings::RuntimeState::Static);
-        Ethernet.begin(mac,
-                       NetworkSettings::toIp(cfg.ip),
-                       NetworkSettings::toIp(cfg.dns),
-                       NetworkSettings::toIp(cfg.gateway),
-                       NetworkSettings::toIp(cfg.mask));
+        ip = NetworkSettings::toIp(cfg.ip);
+        mask = NetworkSettings::toIp(cfg.mask);
+        gateway = NetworkSettings::toIp(cfg.gateway);
+        dns = NetworkSettings::toIp(cfg.dns);
     }
 
-    delay(250);
+    // STM32Ethernet native static overload. This calls stm32_eth_init()
+    // directly and avoids the MAC-based compatibility overload.
+    Ethernet.begin(ip, mask, gateway, dns);
+
+    // LwIP needs its scheduler serviced. Pump it here before FreeRTOS starts
+    // so localIP/link diagnostics are meaningful immediately on the OLED.
+    const uint32_t started = millis();
+    while (millis() - started < 500) {
+        Ethernet.schedule();
+        delay(1);
+    }
+
     server_.begin();
     return true;
 }
