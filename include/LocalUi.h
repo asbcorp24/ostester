@@ -26,11 +26,14 @@ private:
     int octet_ = 0;
     int32_t lastEncoder_ = 0;
     uint32_t lastDrawMs_ = 0;
+    uint8_t oledAddress_ = 0;
+    bool oledReady_ = false;
 
     static constexpr uint32_t ENC_A = PB6;   // TIM4_CH1
     static constexpr uint32_t ENC_B = PB7;   // TIM4_CH2
     static constexpr uint32_t ENC_SW = PG8;
 
+    uint8_t scanI2c();
     void draw();
     void drawHome();
     void drawMenu();
