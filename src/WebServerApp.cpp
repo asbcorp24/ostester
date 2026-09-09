@@ -5,8 +5,6 @@ WebServerApp::WebServerApp(ScriptEngine& scripts, NetworkSettings& netSettings)
     : scripts_(scripts), netSettings_(netSettings) {}
 
 bool WebServerApp::begin() {
-    store_.begin();
-
     const auto& cfg = netSettings_.config();
     IPAddress ip;
     IPAddress mask;
@@ -29,12 +27,10 @@ bool WebServerApp::begin() {
         dns = NetworkSettings::toIp(cfg.dns);
     }
 
-    // STM32Ethernet native static overload. This calls stm32_eth_init()
-    // directly and avoids the MAC-based compatibility overload.
+    // Start Ethernet before any persistent script-store work. If the store
+    // stalls or is corrupt, network diagnostics must still come up.
     Ethernet.begin(ip, mask, gateway, dns);
 
-    // LwIP needs its scheduler serviced. Pump it here before FreeRTOS starts
-    // so localIP/link diagnostics are meaningful immediately on the OLED.
     const uint32_t started = millis();
     while (millis() - started < 500) {
         Ethernet.schedule();
@@ -42,6 +38,9 @@ bool WebServerApp::begin() {
     }
 
     server_.begin();
+
+    // Script store is intentionally initialized after networking.
+    store_.begin();
     return true;
 }
 
