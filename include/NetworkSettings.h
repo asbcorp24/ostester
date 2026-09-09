@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <IPAddress.h>
 
 class NetworkSettings {
 public:
