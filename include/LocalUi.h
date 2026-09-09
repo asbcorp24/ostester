@@ -12,7 +12,7 @@ public:
     void loop();
 
 private:
-    enum class Screen : uint8_t { Home, Menu, EditIp };
+    enum class Screen : uint8_t { Home, Diagnostics, Menu, EditIp };
     enum class Field : uint8_t { Ip, Mask, Gateway, Dns };
 
     NetworkSettings& settings_;
@@ -24,6 +24,7 @@ private:
     Field editField_ = Field::Ip;
     int menuIndex_ = 0;
     int octet_ = 0;
+    int diagPage_ = 0;
     int32_t lastEncoder_ = 0;
     uint32_t lastDrawMs_ = 0;
     uint8_t oledAddress_ = 0;
@@ -36,6 +37,7 @@ private:
     uint8_t scanI2c();
     void draw();
     void drawHome();
+    void drawDiagnostics();
     void drawMenu();
     void drawEditIp();
     void handleRotation(int delta);
@@ -43,4 +45,6 @@ private:
     uint8_t* fieldBytes(Field field);
     const char* fieldName(Field field) const;
     static void printIp(U8G2& d, const uint8_t ip[4]);
+    static void printIp(U8G2& d, const IPAddress& ip);
+    const char* runtimeStateText() const;
 };
