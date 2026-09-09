@@ -21,22 +21,79 @@ LocalUi::LocalUi(NetworkSettings& settings)
     : settings_(settings),
       display_(U8G2_R0, U8X8_PIN_NONE) {}
 
+uint8_t LocalUi::scanI2c() {
+    Serial.println("I2C scan on PB8(SCL) / PB9(SDA)...");
+    uint8_t first = 0;
+    uint8_t found = 0;
+
+    for (uint8_t addr = 1; addr < 127; ++addr) {
+        Wire.beginTransmission(addr);
+        const uint8_t err = Wire.endTransmission();
+        if (err == 0) {
+            ++found;
+            if (first == 0) first = addr;
+            Serial.print("  I2C device found at 0x");
+            if (addr < 16) Serial.print('0');
+            Serial.println(addr, HEX);
+        }
+    }
+
+    if (found == 0) {
+        Serial.println("  No I2C devices found");
+        return 0;
+    }
+
+    if (first == 0x3C || first == 0x3D) return first;
+
+    // Prefer the standard OLED addresses if several devices are present.
+    for (uint8_t preferred : {static_cast<uint8_t>(0x3C), static_cast<uint8_t>(0x3D)}) {
+        Wire.beginTransmission(preferred);
+        if (Wire.endTransmission() == 0) return preferred;
+    }
+
+    return first;
+}
+
 bool LocalUi::begin() {
     Wire.setSCL(PB8);
     Wire.setSDA(PB9);
     Wire.begin();
+    Wire.setClock(100000);
+    delay(20);
 
+    oledAddress_ = scanI2c();
+    if (oledAddress_ == 0) {
+        Serial.println("OLED: not detected on I2C");
+        Serial.println("Check: VCC=3.3V, GND, SCL=PB8, SDA=PB9");
+        return false;
+    }
+
+    Serial.print("OLED candidate address: 0x");
+    if (oledAddress_ < 16) Serial.print('0');
+    Serial.println(oledAddress_, HEX);
+
+    // U8g2 expects the 8-bit I2C address.
+    display_.setI2CAddress(static_cast<uint8_t>(oledAddress_ << 1));
     display_.begin();
     display_.setFont(u8g2_font_6x12_tf);
+    oledReady_ = true;
 
-    // Hardware quadrature decoder: PB6=TIM4_CH1, PB7=TIM4_CH2.
-    // Construct it here (not as a global object) so Arduino/HAL is already initialized.
+    display_.clearBuffer();
+    display_.drawStr(0, 14, "OSTester OLED OK");
+    display_.setCursor(0, 32);
+    display_.print("I2C: 0x");
+    if (oledAddress_ < 16) display_.print('0');
+    display_.print(oledAddress_, HEX);
+    display_.drawStr(0, 50, "Starting system...");
+    display_.sendBuffer();
+
     encoder_ = new STM32encoder(TIM4, 8, 3);
     if (encoder_ == nullptr || !encoder_->isStarted()) {
         display_.clearBuffer();
         display_.drawStr(0, 20, "Encoder TIM4 error");
         display_.drawStr(0, 38, "PB6 / PB7");
         display_.sendBuffer();
+        Serial.println("Encoder TIM4 initialization failed");
         return false;
     }
 
@@ -50,6 +107,8 @@ bool LocalUi::begin() {
 }
 
 void LocalUi::loop() {
+    if (!oledReady_) return;
+
     if (encoder_ && encoder_->isUpdated()) {
         const int32_t current = encoder_->pos();
         if (current != lastEncoder_) {
@@ -176,6 +235,7 @@ void LocalUi::printIp(U8G2& d, const uint8_t ip[4]) {
 }
 
 void LocalUi::draw() {
+    if (!oledReady_) return;
     lastDrawMs_ = millis();
     display_.clearBuffer();
     display_.setFont(u8g2_font_6x12_tf);
