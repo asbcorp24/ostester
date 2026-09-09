@@ -38,14 +38,23 @@ void setup() {
 
     networkSettings.begin();
 
-    // OLED must start BEFORE Ethernet/DHCP. Ethernet.begin() may block for
-    // many seconds while waiting for DHCP; starting the UI first makes the
-    // display come alive immediately and initially show 0.0.0.0.
+    // OLED first, so diagnostics are visible immediately.
     if (!localUi.begin()) {
-        Serial.println("OLED/Encoder init failed");
+        Serial.println("OLED init failed");
     } else {
-        Serial.println("OLED/Encoder ready");
+        Serial.println("OLED ready");
     }
+
+    // Ethernet MUST start before BusEngine/Lua so another subsystem cannot
+    // prevent network initialization.
+    Serial.println("Starting Ethernet...");
+    web.begin();
+    Serial.println("Ethernet begin returned");
+
+    IPAddress ip = web.ip();
+    Serial.print("HTTP: http://");
+    Serial.print(ip);
+    Serial.println("/");
 
     if (!BusEngine::instance().begin()) {
         Serial.println("BusTask init failed");
@@ -58,13 +67,6 @@ void setup() {
     } else {
         Serial.println("LuaTask ready");
     }
-
-    web.begin();
-
-    IPAddress ip = web.ip();
-    Serial.print("HTTP: http://");
-    Serial.print(ip);
-    Serial.println("/");
 
     if (xTaskCreate(webTask, "WebTask", 4096, nullptr, 3, &webTaskHandle) != pdPASS) {
         Serial.println("WebTask create failed");
