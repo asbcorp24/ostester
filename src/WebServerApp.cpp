@@ -10,10 +10,13 @@ bool WebServerApp::begin() {
     byte mac[] = {0x02, 0xF7, 0x67, 0x01, 0x00, 0x01};
     const auto& cfg = netSettings_.config();
 
+    Serial.print("ETH: config mode=");
+    Serial.println(cfg.dhcp ? "DHCP" : "STATIC");
+
     if (cfg.dhcp) {
-        // Keep the original, known-good behavior:
-        // try DHCP first; if it fails, always fall back to 192.168.1.77.
-        if (Ethernet.begin(mac) == 0) {
+        const int dhcpResult = Ethernet.begin(mac);
+        if (dhcpResult == 0) {
+            Serial.println("ETH: DHCP failed -> fallback 192.168.1.77");
             IPAddress fallbackIp(192, 168, 1, 77);
             IPAddress fallbackDns(192, 168, 1, 1);
             IPAddress fallbackGateway(192, 168, 1, 1);
@@ -24,17 +27,32 @@ bool WebServerApp::begin() {
                            fallbackDns,
                            fallbackGateway,
                            fallbackMask);
+            netSettings_.setRuntimeState(NetworkSettings::RuntimeState::DhcpFallback);
+        } else {
+            Serial.println("ETH: DHCP OK");
+            netSettings_.setRuntimeState(NetworkSettings::RuntimeState::DhcpOk);
         }
     } else {
-        // STATIC mode is used only when the user explicitly disables DHCP.
+        Serial.println("ETH: applying saved STATIC configuration");
         Ethernet.begin(mac,
                        NetworkSettings::toIp(cfg.ip),
                        NetworkSettings::toIp(cfg.dns),
                        NetworkSettings::toIp(cfg.gateway),
                        NetworkSettings::toIp(cfg.mask));
+        netSettings_.setRuntimeState(NetworkSettings::RuntimeState::Static);
     }
 
     delay(250);
+
+    Serial.print("ETH: localIP=");
+    Serial.println(Ethernet.localIP());
+    Serial.print("ETH: mask=");
+    Serial.println(Ethernet.subnetMask());
+    Serial.print("ETH: gateway=");
+    Serial.println(Ethernet.gatewayIP());
+    Serial.print("ETH: dns=");
+    Serial.println(Ethernet.dnsServerIP());
+
     server_.begin();
     return true;
 }
