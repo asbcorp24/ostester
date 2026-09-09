@@ -22,19 +22,13 @@ LocalUi::LocalUi(NetworkSettings& settings)
       display_(U8G2_R0, U8X8_PIN_NONE) {}
 
 uint8_t LocalUi::scanI2c() {
-    // Fast boot: probe only the standard OLED addresses first.
-    // A full 1..126 scan delays display startup noticeably when most
-    // addresses do not acknowledge.
+    // Fast boot: probe only the standard OLED addresses.
     for (uint8_t addr : {static_cast<uint8_t>(0x3C), static_cast<uint8_t>(0x3D)}) {
         Wire.beginTransmission(addr);
         if (Wire.endTransmission() == 0) {
-            Serial.print("OLED found at 0x");
-            Serial.println(addr, HEX);
             return addr;
         }
     }
-
-    Serial.println("OLED not found at 0x3C/0x3D");
     return 0;
 }
 
@@ -46,7 +40,6 @@ bool LocalUi::begin() {
 
     oledAddress_ = scanI2c();
     if (oledAddress_ == 0) {
-        Serial.println("OLED: not detected on I2C");
         return false;
     }
 
@@ -64,14 +57,13 @@ bool LocalUi::begin() {
     display_.drawStr(0, 50, "NET starting...");
     display_.sendBuffer();
 
-    // Encoder is optional. The OLED diagnostics work without it.
+    // Encoder is optional. OLED diagnostics work without it.
     encoder_ = new STM32encoder(TIM4, 8, 3);
     if (encoder_ != nullptr && encoder_->isStarted()) {
         encoder_->setButton(ENC_SW, BTN_POLL);
         encoder_->pos(0);
         lastEncoder_ = 0;
     } else {
-        Serial.println("Encoder not available - OLED auto diagnostics enabled");
         if (encoder_ != nullptr) {
             delete encoder_;
             encoder_ = nullptr;
