@@ -48,8 +48,9 @@ void setup() {
     if (cfg.dhcp) {
         if (isZeroIp(currentIp)) {
             // DHCP did not produce an address: guarantee a usable static fallback.
+            byte mac[] = {0x02, 0xF7, 0x67, 0x01, 0x00, 0x01};
             Ethernet.begin(
-                (uint8_t[]){0x02, 0xF7, 0x67, 0x01, 0x00, 0x01},
+                mac,
                 NetworkSettings::toIp(cfg.ip),
                 NetworkSettings::toIp(cfg.dns),
                 NetworkSettings::toIp(cfg.gateway),
