@@ -1,5 +1,5 @@
 #include "ScriptStore.h"
-#include <EEPROM.h>
+#include <FlashStorage_STM32.h>
 #include <cstddef>
 #include <cstring>
 
@@ -79,11 +79,23 @@ bool ScriptStore::eraseSlot(uint8_t index) {
 }
 
 bool ScriptStore::begin() {
+    const int requiredBytes = slotAddress(MAX_SCRIPTS);
+    if (requiredBytes > static_cast<int>(EEPROM.length())) {
+        initialized_ = false;
+        return false;
+    }
+
+    // Important on STM32F7: collect all byte changes in RAM and flush flash once.
+    // Without this, a ~2 KB ScriptStore::Slot can cause thousands of slow flash writes.
+    EEPROM.setCommitASAP(false);
+
     Header h{};
     if (!readHeader(h)) {
         writeHeader();
         for (uint8_t i = 0; i < MAX_SCRIPTS; ++i) eraseSlot(i);
+        EEPROM.commit();
     }
+
     initialized_ = true;
     return true;
 }
@@ -128,6 +140,20 @@ bool ScriptStore::save(const String& name, const String& code, String* error) {
         setError(error, "flash write failed");
         return false;
     }
+
+    // One flash operation per Save button press.
+    EEPROM.commit();
+
+    // Read back and verify so the web UI never reports success on a bad flash write.
+    Slot verify{};
+    if (!readSlot(static_cast<uint8_t>(slotIndex), verify) ||
+        verify.length != slot.length ||
+        verify.checksum != slot.checksum ||
+        !namesEqual(verify.name, name)) {
+        setError(error, "flash verify failed");
+        return false;
+    }
+
     return true;
 }
 
@@ -160,6 +186,8 @@ bool ScriptStore::remove(const String& name, String* error) {
         setError(error, "flash erase failed");
         return false;
     }
+
+    EEPROM.commit();
     return true;
 }
 
