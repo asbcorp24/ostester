@@ -30,25 +30,16 @@ static void uiTask(void*) {
 }
 
 void setup() {
-    // Restore the original working initialization order.
     networkSettings.begin();
 
     BusEngine::instance().begin();
     scripts.begin();
 
-    // Ethernet startup is exactly the old working WebServerApp path.
+    // Start Ethernet first. WebServerApp owns DHCP/static/fallback selection.
     web.begin();
 
-    // OLED is passive: it starts only after Ethernet and only displays state/IP.
+    // OLED is passive and displays the actual Ethernet state/IP.
     localUi.begin();
-
-    const auto& cfg = networkSettings.config();
-    IPAddress ip = Ethernet.localIP();
-    if (ip[0] || ip[1] || ip[2] || ip[3]) {
-        networkSettings.setRuntimeState(cfg.dhcp
-            ? NetworkSettings::RuntimeState::DhcpOk
-            : NetworkSettings::RuntimeState::Static);
-    }
 
     if (xTaskCreate(webTask, "WebTask", 4096, nullptr, 3, &webTaskHandle) != pdPASS) {
         while (true) delay(1000);
